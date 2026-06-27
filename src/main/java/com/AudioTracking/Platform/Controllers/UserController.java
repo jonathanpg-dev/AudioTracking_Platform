@@ -4,6 +4,7 @@ import com.AudioTracking.Platform.Entities.User;
 import com.AudioTracking.Platform.Entities.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,6 +25,12 @@ public class UserController {
     @PostMapping("api/v1/users")
     public List<User> createUsers(@RequestBody List<User> users) {
         return userRepo.saveAll(users);
+    }
+
+    @GetMapping("api/v1/users")
+    public List<User> getAllUsers() {
+        List<User> usersList = userRepo.findAll();
+        return usersList;
     }
 
 }
