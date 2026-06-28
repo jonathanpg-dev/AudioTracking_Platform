@@ -4,12 +4,10 @@ import com.AudioTracking.Platform.Entities.User;
 import com.AudioTracking.Platform.Entities.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 public class UserController {
@@ -31,6 +29,12 @@ public class UserController {
     public List<User> getAllUsers() {
         List<User> usersList = userRepo.findAll();
         return usersList;
+    }
+
+    @GetMapping("api/v1/user/{id}")
+    public User getAllUsers(@PathVariable UUID id) {
+        User user = userRepo.findById(id).orElse(null);
+        return user;
     }
 
 }
