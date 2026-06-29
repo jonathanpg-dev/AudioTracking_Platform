@@ -32,9 +32,23 @@ public class UserController {
     }
 
     @GetMapping("api/v1/user/{id}")
-    public User getAllUsers(@PathVariable UUID id) {
+    public User getUserById(@PathVariable UUID id) {
         User user = userRepo.findById(id).orElse(null);
         return user;
+    }
+
+    @PutMapping("api/v1/user/{id}")
+    public User completeUserUpdate(@PathVariable UUID id, @RequestBody User updatedUser) {
+        User existingUser = userRepo.findById(id).orElse(null);
+
+        if(existingUser != null) {
+            existingUser.setName(updatedUser.getName());
+            existingUser.setEmail(updatedUser.getEmail());
+            userRepo.save(existingUser);
+            return existingUser;
+        } else {
+            return null;
+        }
     }
 
 }
