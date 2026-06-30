@@ -14,13 +14,13 @@ public class UserController {
     @Autowired
     private UserRepo userRepo;
 
-    @PostMapping("api/v1/user")
+    @PostMapping("api/v1/users")
     public ResponseEntity<User> createUser(@RequestBody User user) {
         User response = userRepo.save(user);
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("api/v1/users")
+    @PostMapping("api/v1/users/batch")
     public List<User> createUsers(@RequestBody List<User> users) {
         return userRepo.saveAll(users);
     }
@@ -31,13 +31,13 @@ public class UserController {
         return usersList;
     }
 
-    @GetMapping("api/v1/user/{id}")
+    @GetMapping("api/v1/users/{id}")
     public User getUserById(@PathVariable UUID id) {
         User user = userRepo.findById(id).orElse(null);
         return user;
     }
 
-    @PutMapping("api/v1/user/{id}")
+    @PutMapping("api/v1/users/{id}")
     public User completeUserUpdate(@PathVariable UUID id, @RequestBody User updatedUser) {
         User existingUser = userRepo.findById(id).orElse(null);
 
@@ -49,6 +49,11 @@ public class UserController {
         } else {
             return null;
         }
+    }
+
+    @DeleteMapping("api/v1/users/{id}")
+    public void deleteUser(@PathVariable UUID id) {
+        userRepo.deleteById(id);
     }
 
 }
