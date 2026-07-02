@@ -3,6 +3,7 @@ package com.AudioTracking.Platform.Controllers;
 import com.AudioTracking.Platform.Entities.User;
 import com.AudioTracking.Platform.Entities.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,6 +38,13 @@ public class UserController {
         return user;
     }
 
+    @GetMapping("api/v1/users/sort")
+    public List<User> getSortedUsers(@RequestParam String sortDir, @RequestParam String sortBy)
+    {
+        Sort.Direction direction = sortDir.equals("asc")?Sort.Direction.ASC:Sort.Direction.DESC;
+        return userRepo.findAll(Sort.by(direction, sortBy));
+    }
+
     @PutMapping("api/v1/users/{id}")
     public User completeUserUpdate(@PathVariable UUID id, @RequestBody User updatedUser) {
         User existingUser = userRepo.findById(id).orElse(null);
@@ -55,5 +63,7 @@ public class UserController {
     public void deleteUser(@PathVariable UUID id) {
         userRepo.deleteById(id);
     }
+
+
 
 }
