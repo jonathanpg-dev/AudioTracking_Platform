@@ -3,6 +3,8 @@ package com.AudioTracking.Platform.Controllers;
 import com.AudioTracking.Platform.Entities.User;
 import com.AudioTracking.Platform.Entities.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -43,6 +45,15 @@ public class UserController {
     {
         Sort.Direction direction = sortDir.equals("asc")?Sort.Direction.ASC:Sort.Direction.DESC;
         return userRepo.findAll(Sort.by(direction, sortBy));
+    }
+
+    @GetMapping("api/v1/users/sortPage")
+    public List<User> getSortedUsersPage(@RequestParam int page, @RequestParam int size,
+                                         @RequestParam String sortDir, @RequestParam String sortBy)
+    {
+        Sort.Direction direction = sortDir.equals("asc")?Sort.Direction.ASC:Sort.Direction.DESC;
+        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
+        return userRepo.findAll(pageable).getContent();
     }
 
     @PutMapping("api/v1/users/{id}")
