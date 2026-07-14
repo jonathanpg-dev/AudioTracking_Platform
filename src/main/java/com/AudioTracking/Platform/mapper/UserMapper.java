@@ -1,6 +1,5 @@
 package com.AudioTracking.Platform.mapper;
 
-import com.AudioTracking.Platform.dto.CreateUserRequest;
 import com.AudioTracking.Platform.dto.UpdateUserRequest;
 import com.AudioTracking.Platform.dto.UserResponse;
 import com.AudioTracking.Platform.entity.User;
@@ -10,13 +9,6 @@ import java.util.List;
 
 @Component
 public class UserMapper {
-
-    public User toEntity(CreateUserRequest request) {
-        User user = new User();
-        user.setUsername(request.username());
-        user.setEmail(request.email());
-        return user;
-    }
 
     public void updateEntity(UpdateUserRequest request, User existing) {
         existing.setUsername(request.username());

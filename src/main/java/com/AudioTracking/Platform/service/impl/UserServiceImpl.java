@@ -1,6 +1,5 @@
 package com.AudioTracking.Platform.service.impl;
 
-import com.AudioTracking.Platform.dto.CreateUserRequest;
 import com.AudioTracking.Platform.dto.UpdateUserRequest;
 import com.AudioTracking.Platform.dto.UserResponse;
 import com.AudioTracking.Platform.entity.User;
@@ -26,20 +25,6 @@ public class UserServiceImpl implements UserService {
     public UserServiceImpl(UserRepository userRepository, UserMapper userMapper) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
-    }
-
-    @Override
-    public UserResponse createUser(CreateUserRequest request) {
-        validateUnique(request.username(), request.email());
-        User saved = userRepository.save(userMapper.toEntity(request));
-        return userMapper.toResponse(saved);
-    }
-
-    @Override
-    public List<UserResponse> createUsers(List<CreateUserRequest> requests) {
-        requests.forEach(request -> validateUnique(request.username(), request.email()));
-        List<User> users = requests.stream().map(userMapper::toEntity).toList();
-        return userMapper.toResponseList(userRepository.saveAll(users));
     }
 
     @Override
@@ -83,14 +68,5 @@ public class UserServiceImpl implements UserService {
     private User findUserOrThrow(UUID id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User with id '" + id + "' not found"));
-    }
-
-    private void validateUnique(String username, String email) {
-        if (userRepository.existsByUsername(username)) {
-            throw new DuplicateResourceException("Username '" + username + "' is already taken");
-        }
-        if (userRepository.existsByEmail(email)) {
-            throw new DuplicateResourceException("Email '" + email + "' is already taken");
-        }
     }
 }

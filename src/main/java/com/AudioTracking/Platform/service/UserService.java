@@ -1,6 +1,5 @@
 package com.AudioTracking.Platform.service;
 
-import com.AudioTracking.Platform.dto.CreateUserRequest;
 import com.AudioTracking.Platform.dto.UpdateUserRequest;
 import com.AudioTracking.Platform.dto.UserResponse;
 import org.springframework.data.domain.Page;
@@ -11,10 +10,6 @@ import java.util.List;
 import java.util.UUID;
 
 public interface UserService {
-
-    UserResponse createUser(CreateUserRequest request);
-
-    List<UserResponse> createUsers(List<CreateUserRequest> requests);
 
     List<UserResponse> getAllUsers(Sort sort);
 

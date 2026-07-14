@@ -1,13 +1,11 @@
 package com.AudioTracking.Platform.controller;
 
-import com.AudioTracking.Platform.dto.CreateUserRequest;
 import com.AudioTracking.Platform.dto.UpdateUserRequest;
 import com.AudioTracking.Platform.dto.UserResponse;
 import com.AudioTracking.Platform.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,18 +20,6 @@ public class UserController {
 
     public UserController(UserService userService) {
         this.userService = userService;
-    }
-
-    @PostMapping
-    public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
-        UserResponse response = userService.createUser(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
-    }
-
-    @PostMapping("/batch")
-    public ResponseEntity<List<UserResponse>> createUsers(@Valid @RequestBody List<CreateUserRequest> requests) {
-        List<UserResponse> response = userService.createUsers(requests);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping

@@ -4,7 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public record CreateUserRequest(
+public record RegisterRequest(
 
         @NotBlank
         @Size(min = 3, max = 30)
@@ -12,6 +12,10 @@ public record CreateUserRequest(
 
         @NotBlank
         @Email
-        String email
+        String email,
+
+        @NotBlank
+        @Size(min = 8)
+        String password
 ) {
 }
