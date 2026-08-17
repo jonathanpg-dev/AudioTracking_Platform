@@ -8,6 +8,7 @@ import com.AudioTracking.Platform.entity.User;
 import com.AudioTracking.Platform.exception.DuplicateResourceException;
 import com.AudioTracking.Platform.mapper.UserMapper;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.security.CustomUserDetails;
 import com.AudioTracking.Platform.security.JwtService;
 import com.AudioTracking.Platform.service.AuthService;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -56,7 +57,8 @@ public class AuthServiceImpl implements AuthService {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.username(), request.password()));
 
-        String token = jwtService.generateToken(authentication.getName());
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        String token = jwtService.generateToken(userDetails.getUser().getId());
         return new AuthResponse(token);
     }
 }
