@@ -21,8 +21,13 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
+    // Null for accounts created via Google login that have never set a local password.
+    @Column
     private String passwordHash;
+
+    // Google's stable 'sub' claim. Null for accounts that only ever used username/password.
+    @Column(unique = true)
+    private String googleId;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)

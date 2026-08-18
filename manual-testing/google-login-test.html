@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!--
+  Disposable manual-testing harness — NOT part of the app's frontend.
+  Purpose: sign in with a real Google account and surface the raw ID token
+  so it can be pasted into Postman as the "idToken" field of
+  POST /api/v1/auth/google. Delete this whenever it's no longer needed.
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Google Login Test Harness</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <h1>Google ID Token Test Harness</h1>
+  <p>Sign in below, then copy the token from the box and paste it into Postman.</p>
+
+  <div id="g_id_onload"
+       data-client_id="39740111233-gpf5q3p7tj49urceq9tkcjpp0h56c182.apps.googleusercontent.com"
+       data-callback="handleCredentialResponse">
+  </div>
+  <div class="g_id_signin" data-type="standard"></div>
+
+  <p>ID token:</p>
+  <textarea id="token" rows="12" cols="90" readonly placeholder="Appears here after you sign in"></textarea>
+
+  <script>
+    function handleCredentialResponse(response) {
+      document.getElementById('token').value = response.credential;
+    }
+  </script>
+</body>
+</html>

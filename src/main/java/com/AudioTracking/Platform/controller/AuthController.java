@@ -1,6 +1,7 @@
 package com.AudioTracking.Platform.controller;
 
 import com.AudioTracking.Platform.dto.AuthResponse;
+import com.AudioTracking.Platform.dto.GoogleLoginRequest;
 import com.AudioTracking.Platform.dto.LoginRequest;
 import com.AudioTracking.Platform.dto.RegisterRequest;
 import com.AudioTracking.Platform.dto.UserResponse;
@@ -32,5 +33,10 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+        return ResponseEntity.ok(authService.googleLogin(request));
     }
 }

@@ -1,21 +1,28 @@
 package com.AudioTracking.Platform.service.impl;
 
 import com.AudioTracking.Platform.dto.AuthResponse;
+import com.AudioTracking.Platform.dto.GoogleLoginRequest;
 import com.AudioTracking.Platform.dto.LoginRequest;
 import com.AudioTracking.Platform.dto.RegisterRequest;
 import com.AudioTracking.Platform.dto.UserResponse;
 import com.AudioTracking.Platform.entity.User;
 import com.AudioTracking.Platform.exception.DuplicateResourceException;
+import com.AudioTracking.Platform.exception.InvalidGoogleTokenException;
 import com.AudioTracking.Platform.mapper.UserMapper;
 import com.AudioTracking.Platform.repository.UserRepository;
 import com.AudioTracking.Platform.security.CustomUserDetails;
 import com.AudioTracking.Platform.security.JwtService;
 import com.AudioTracking.Platform.service.AuthService;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.security.GeneralSecurityException;
 
 @Service
 public class AuthServiceImpl implements AuthService {
@@ -25,14 +32,17 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final GoogleIdTokenVerifier googleIdTokenVerifier;
 
     public AuthServiceImpl(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder,
-                            AuthenticationManager authenticationManager, JwtService jwtService) {
+                            AuthenticationManager authenticationManager, JwtService jwtService,
+                            GoogleIdTokenVerifier googleIdTokenVerifier) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
+        this.googleIdTokenVerifier = googleIdTokenVerifier;
     }
 
     @Override
@@ -60,5 +70,66 @@ public class AuthServiceImpl implements AuthService {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String token = jwtService.generateToken(userDetails.getUser().getId());
         return new AuthResponse(token);
+    }
+
+    @Override
+    public AuthResponse googleLogin(GoogleLoginRequest request) {
+        GoogleIdToken idToken;
+        try {
+            idToken = googleIdTokenVerifier.verify(request.idToken());
+        } catch (GeneralSecurityException | IOException | IllegalArgumentException e) {
+            throw new InvalidGoogleTokenException("Could not verify Google token");
+        }
+
+        if (idToken == null) {
+            throw new InvalidGoogleTokenException("Invalid or expired Google token");
+        }
+
+        GoogleIdToken.Payload payload = idToken.getPayload();
+        if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
+            throw new InvalidGoogleTokenException("Google account email is not verified");
+        }
+
+        String googleId = payload.getSubject();
+        String email = payload.getEmail();
+
+        User user = userRepository.findByGoogleId(googleId)
+                .orElseGet(() -> linkOrCreateGoogleUser(googleId, email));
+
+        String token = jwtService.generateToken(user.getId());
+        return new AuthResponse(token);
+    }
+
+    private User linkOrCreateGoogleUser(String googleId, String email) {
+        return userRepository.findByEmail(email)
+                .map(existing -> {
+                    existing.setGoogleId(googleId);
+                    return userRepository.save(existing);
+                })
+                .orElseGet(() -> {
+                    User user = new User();
+                    user.setUsername(generateUniqueUsername(email));
+                    user.setEmail(email);
+                    user.setGoogleId(googleId);
+                    return userRepository.save(user);
+                });
+    }
+
+    private String generateUniqueUsername(String email) {
+        String base = email.substring(0, email.indexOf('@')).replaceAll("[^a-zA-Z0-9._-]", "");
+        if (base.length() < 3) {
+            base = base + "user"; // pad short local-parts (e.g. "ab") up to the 3-char minimum
+        }
+        if (base.length() > 26) {
+            base = base.substring(0, 26); // leaves room for a numeric suffix, staying within the 30-char limit
+        }
+
+        String candidate = base;
+        int suffix = 0;
+        while (userRepository.existsByUsername(candidate)) {
+            suffix++;
+            candidate = base + suffix;
+        }
+        return candidate;
     }
 }
