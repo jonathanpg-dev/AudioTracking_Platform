@@ -6,6 +6,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.UUID;
 
 public class CustomUserDetails implements UserDetails {
 
@@ -17,6 +18,12 @@ public class CustomUserDetails implements UserDetails {
 
     public User getUser() {
         return user;
+    }
+
+    // Convenience for owned-resource controllers (Asset, Tag, Project, Collection, ...)
+    // that only ever need the id, not the full User entity.
+    public UUID getId() {
+        return user.getId();
     }
 
     @Override
