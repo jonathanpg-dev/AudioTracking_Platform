@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local secrets (R2 credentials, etc.) — never commit real values ###
+.env
+.env.*
+!.env.example
+application-local.properties

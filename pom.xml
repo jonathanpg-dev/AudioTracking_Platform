@@ -70,6 +70,14 @@
 			<version>2.7.0</version>
 		</dependency>
 
+		<!-- Cloudflare R2 is S3-compatible, so the official AWS S3 client works against it
+		     directly by overriding the endpoint — no R2-specific SDK needed. -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>2.29.52</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

@@ -21,6 +21,9 @@ public record AssetResponse(
         Instant updatedAt,
         List<TagResponse> tags,
         UUID projectId,
-        String projectName
+        String projectName,
+        // Deliberately a boolean, not the raw storageKey — the internal object-key format is an
+        // implementation detail, not something clients should see or depend on.
+        boolean hasAudioFile
 ) {
 }

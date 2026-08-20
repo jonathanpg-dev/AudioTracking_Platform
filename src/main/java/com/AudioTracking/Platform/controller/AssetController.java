@@ -3,6 +3,7 @@ package com.AudioTracking.Platform.controller;
 import com.AudioTracking.Platform.dto.asset.AssetFilter;
 import com.AudioTracking.Platform.dto.asset.AssetResponse;
 import com.AudioTracking.Platform.dto.asset.CreateAssetRequest;
+import com.AudioTracking.Platform.dto.asset.FileAccessResponse;
 import com.AudioTracking.Platform.dto.asset.UpdateAssetRequest;
 import com.AudioTracking.Platform.entity.AssetType;
 import com.AudioTracking.Platform.security.CustomUserDetails;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -84,5 +86,28 @@ public class AssetController {
                                                     @PathVariable UUID id,
                                                     @PathVariable UUID tagId) {
         return ResponseEntity.ok(assetService.removeTag(currentUser.getId(), id, tagId));
+    }
+
+    // Uploads a new file, or replaces the existing one — same endpoint handles both, since
+    // "replace" is just "upload" when a file is already present (see AssetServiceImpl).
+    @PostMapping("/{id}/file")
+    public ResponseEntity<AssetResponse> uploadFile(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                      @PathVariable UUID id,
+                                                      @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(assetService.uploadFile(currentUser.getId(), id, file));
+    }
+
+    // Returns a short-lived signed URL, not the file itself — the file stays private in R2 and
+    // is never proxied through this server or exposed at a permanent public address.
+    @GetMapping("/{id}/file")
+    public ResponseEntity<FileAccessResponse> getFileAccessUrl(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                                 @PathVariable UUID id) {
+        return ResponseEntity.ok(assetService.getFileAccessUrl(currentUser.getId(), id));
+    }
+
+    @DeleteMapping("/{id}/file")
+    public ResponseEntity<AssetResponse> deleteFile(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                     @PathVariable UUID id) {
+        return ResponseEntity.ok(assetService.deleteFile(currentUser.getId(), id));
     }
 }

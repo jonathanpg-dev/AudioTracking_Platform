@@ -22,6 +22,8 @@ Phase 4
 - Cloud object storage integration
 - AWS S3 abstraction layer
 
+See [docs/storage.md](docs/storage.md) for how audio file storage is configured and why.
+
 Phase 5
 - Tagging system
 - Search and filtering

@@ -69,7 +69,8 @@ public class AssetMapper {
                 asset.getUpdatedAt(),
                 tags,
                 project == null ? null : project.getId(),
-                project == null ? null : project.getName());
+                project == null ? null : project.getName(),
+                asset.getStorageKey() != null);
     }
 
     public List<AssetResponse> toResponseList(List<Asset> assets) {

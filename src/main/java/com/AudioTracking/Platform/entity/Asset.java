@@ -47,6 +47,12 @@ public class Asset {
     @Column(length = 10)
     private String audioFormat;
 
+    // Stable pointer to the R2 object holding this asset's actual audio file — never a public
+    // URL, never SDK/credential data. Null until a file is uploaded; that's a valid, expected
+    // state (an Asset can exist purely as metadata before any audio is attached).
+    @Column(length = 500)
+    private String storageKey;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
