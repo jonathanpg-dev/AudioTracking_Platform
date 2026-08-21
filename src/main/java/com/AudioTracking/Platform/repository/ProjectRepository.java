@@ -12,4 +12,8 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     List<Project> findAllByUserIdOrderByCreatedAtDesc(UUID userId);
 
     Optional<Project> findByIdAndUserId(UUID id, UUID userId);
+
+    // Used when deleting a Client: every Project pointing at it must be unassigned (not deleted)
+    // first, same pattern as AssetRepository.findAllByProjectId for Project deletion.
+    List<Project> findAllByClientId(UUID clientId);
 }

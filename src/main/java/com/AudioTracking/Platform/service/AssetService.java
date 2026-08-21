@@ -37,4 +37,10 @@ public interface AssetService {
     FileAccessResponse getFileAccessUrl(UUID ownerId, UUID assetId);
 
     AssetResponse deleteFile(UUID ownerId, UUID assetId);
+
+    // Lists a Project's assets for anyone with at least VIEW access to that Project (owner, VIEW,
+    // or EDIT collaborator) -- the general getAssets/search above is hard-scoped to assets the
+    // caller personally owns and structurally can't serve a collaborator browsing someone else's
+    // shared project. See docs/collaboration.md.
+    List<AssetResponse> getProjectAssets(UUID requesterId, UUID projectId);
 }

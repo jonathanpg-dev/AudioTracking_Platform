@@ -1,9 +1,11 @@
 package com.AudioTracking.Platform.controller;
 
+import com.AudioTracking.Platform.dto.asset.AssetResponse;
 import com.AudioTracking.Platform.dto.project.CreateProjectRequest;
 import com.AudioTracking.Platform.dto.project.ProjectResponse;
 import com.AudioTracking.Platform.dto.project.UpdateProjectRequest;
 import com.AudioTracking.Platform.security.CustomUserDetails;
+import com.AudioTracking.Platform.service.AssetService;
 import com.AudioTracking.Platform.service.ProjectService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -19,9 +21,11 @@ import java.util.UUID;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final AssetService assetService;
 
-    public ProjectController(ProjectService projectService) {
+    public ProjectController(ProjectService projectService, AssetService assetService) {
         this.projectService = projectService;
+        this.assetService = assetService;
     }
 
     @PostMapping
@@ -54,5 +58,14 @@ public class ProjectController {
                                                @PathVariable UUID id) {
         projectService.deleteProject(currentUser.getId(), id);
         return ResponseEntity.noContent().build();
+    }
+
+    // Lives here rather than under /api/v1/assets since the class-level @RequestMapping there
+    // would double the "/api/v1" prefix -- the underlying logic (including the owner/VIEW/EDIT
+    // access check) is still entirely in AssetService, this just wires the nested route to it.
+    @GetMapping("/{projectId}/assets")
+    public ResponseEntity<List<AssetResponse>> getProjectAssets(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                                   @PathVariable UUID projectId) {
+        return ResponseEntity.ok(assetService.getProjectAssets(currentUser.getId(), projectId));
     }
 }

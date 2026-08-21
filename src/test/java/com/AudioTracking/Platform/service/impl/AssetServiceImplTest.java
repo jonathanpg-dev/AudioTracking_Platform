@@ -9,13 +9,14 @@ import com.AudioTracking.Platform.entity.Collection;
 import com.AudioTracking.Platform.entity.Project;
 import com.AudioTracking.Platform.entity.Tag;
 import com.AudioTracking.Platform.entity.User;
+import com.AudioTracking.Platform.exception.InsufficientPermissionException;
 import com.AudioTracking.Platform.exception.ResourceNotFoundException;
 import com.AudioTracking.Platform.exception.StorageException;
 import com.AudioTracking.Platform.mapper.AssetMapper;
 import com.AudioTracking.Platform.repository.AssetRepository;
-import com.AudioTracking.Platform.repository.ProjectRepository;
 import com.AudioTracking.Platform.repository.TagRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.ProjectAccessService;
 import com.AudioTracking.Platform.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,7 +48,7 @@ class AssetServiceImplTest {
     @Mock private AssetRepository assetRepository;
     @Mock private UserRepository userRepository;
     @Mock private TagRepository tagRepository;
-    @Mock private ProjectRepository projectRepository;
+    @Mock private ProjectAccessService projectAccessService;
     @Mock private StorageService storageService;
     @Mock private AssetMapper assetMapper;
 
@@ -61,8 +62,25 @@ class AssetServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        assetService = new AssetServiceImpl(assetRepository, userRepository, tagRepository, projectRepository,
-                storageService, assetMapper, 15L);
+        assetService = new AssetServiceImpl(assetRepository, userRepository, tagRepository,
+                projectAccessService, storageService, assetMapper, 15L);
+    }
+
+    private static User userWithId(UUID id) {
+        User user = new User();
+        user.setId(id);
+        return user;
+    }
+
+    // Asset owned by `ownerId`, with no Project -- the baseline "plain ownership" fixture used by
+    // most tests below. findAccessibleOrThrow resolves ownership by asset.getUser().getId(), so
+    // every asset fixture from here on needs a User set, unlike pre-Phase-5 tests that only
+    // needed assetRepository.findByIdAndUserId to be stubbed correctly.
+    private static Asset ownedAsset(UUID id, UUID ownerId) {
+        Asset asset = new Asset();
+        asset.setId(id);
+        asset.setUser(userWithId(ownerId));
+        return asset;
     }
 
     @Test
@@ -92,9 +110,8 @@ class AssetServiceImplTest {
 
     @Test
     void getAsset_ownedByCaller_returnsIt() {
-        Asset asset = new Asset();
-        asset.setId(assetId);
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
         AssetResponse expected = mock(AssetResponse.class);
         when(assetMapper.toResponse(asset)).thenReturn(expected);
 
@@ -102,19 +119,147 @@ class AssetServiceImplTest {
     }
 
     @Test
-    void getAsset_notOwnedByCaller_throwsNotFound_sameAsNonexistentId() {
-        // findByIdAndUserId is the whole ownership boundary: a wrong id and someone else's
-        // asset id must produce the exact same failure, so existence is never leaked.
-        when(assetRepository.findByIdAndUserId(assetId, otherUserId)).thenReturn(Optional.empty());
+    void getAsset_notOwnedByCaller_noProjectToShareThrough_throwsNotFound() {
+        // Owned by someone else, not part of any Project -- nothing for otherUserId to access
+        // through, same failure as a nonexistent asset.
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         assertThatThrownBy(() -> assetService.getAsset(otherUserId, assetId))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void updateAsset_notOwnedByCaller_throwsNotFound_andNeverWrites() {
+    void getAsset_nonexistentId_throwsNotFound() {
+        when(assetRepository.findById(assetId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> assetService.getAsset(ownerId, assetId))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // --- Collaboration: VIEW/EDIT access through a shared Project ---
+
+    @Test
+    void getAsset_viewCollaboratorOnAssetsProject_canView() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset asset = ownedAsset(assetId, ownerId);
+        asset.setProject(project);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
+        when(projectAccessService.requireViewAccess(otherUserId, projectId)).thenReturn(project);
+        AssetResponse expected = mock(AssetResponse.class);
+        when(assetMapper.toResponse(asset)).thenReturn(expected);
+
+        assertThat(assetService.getAsset(otherUserId, assetId)).isSameAs(expected);
+    }
+
+    @Test
+    void getAsset_unrelatedToAssetsProject_throwsNotFound() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset asset = ownedAsset(assetId, ownerId);
+        asset.setProject(project);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
+        when(projectAccessService.requireViewAccess(otherUserId, projectId))
+                .thenThrow(new ResourceNotFoundException("Project with id '" + projectId + "' not found"));
+
+        assertThatThrownBy(() -> assetService.getAsset(otherUserId, assetId))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void updateAsset_viewCollaborator_isRejected_editRequired() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset asset = ownedAsset(assetId, ownerId);
+        asset.setProject(project);
         UpdateAssetRequest request = new UpdateAssetRequest("New title", null, AssetType.BEAT, null, null, null, null, null, null);
-        when(assetRepository.findByIdAndUserId(assetId, otherUserId)).thenReturn(Optional.empty());
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
+        when(projectAccessService.requireEditAccess(otherUserId, projectId))
+                .thenThrow(new InsufficientPermissionException("VIEW collaborators cannot perform this action"));
+
+        assertThatThrownBy(() -> assetService.updateAsset(otherUserId, assetId, request))
+                .isInstanceOf(InsufficientPermissionException.class);
+
+        verify(assetRepository, never()).save(any());
+    }
+
+    @Test
+    void updateAsset_editCollaborator_canModify_ownershipUnchanged() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset existing = ownedAsset(assetId, ownerId); // still owned by the original creator
+        existing.setProject(project);
+        UpdateAssetRequest request = new UpdateAssetRequest("New title", null, AssetType.BEAT, null, null, null, null, null, null);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
+        when(projectAccessService.requireEditAccess(otherUserId, projectId)).thenReturn(project);
+        when(assetRepository.save(existing)).thenReturn(existing);
+        when(assetMapper.toResponse(existing)).thenReturn(mock(AssetResponse.class));
+
+        assetService.updateAsset(otherUserId, assetId, request);
+
+        verify(assetMapper).updateEntity(request, existing);
+        // The EDIT collaborator modified it, but ownership never moved off the original creator.
+        assertThat(existing.getUser().getId()).isEqualTo(ownerId);
+    }
+
+    @Test
+    void deleteAsset_editCollaborator_canDelete() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset existing = ownedAsset(assetId, ownerId);
+        existing.setProject(project);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
+        when(projectAccessService.requireEditAccess(otherUserId, projectId)).thenReturn(project);
+
+        assetService.deleteAsset(otherUserId, assetId);
+
+        verify(assetRepository).delete(existing);
+    }
+
+    @Test
+    void deleteAsset_viewCollaborator_isRejected() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset existing = ownedAsset(assetId, ownerId);
+        existing.setProject(project);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
+        when(projectAccessService.requireEditAccess(otherUserId, projectId))
+                .thenThrow(new InsufficientPermissionException("VIEW collaborators cannot perform this action"));
+
+        assertThatThrownBy(() -> assetService.deleteAsset(otherUserId, assetId))
+                .isInstanceOf(InsufficientPermissionException.class);
+
+        verify(assetRepository, never()).delete(any());
+    }
+
+    @Test
+    void getProjectAssets_requiresViewAccess_returnsMappedList() {
+        when(projectAccessService.requireViewAccess(ownerId, projectId)).thenReturn(new Project());
+        Asset a1 = new Asset();
+        when(assetRepository.findAllByProjectId(projectId)).thenReturn(java.util.List.of(a1));
+        java.util.List<AssetResponse> expected = java.util.List.of(mock(AssetResponse.class));
+        when(assetMapper.toResponseList(java.util.List.of(a1))).thenReturn(expected);
+
+        assertThat(assetService.getProjectAssets(ownerId, projectId)).isSameAs(expected);
+    }
+
+    @Test
+    void getProjectAssets_unrelatedUser_throwsNotFound() {
+        when(projectAccessService.requireViewAccess(otherUserId, projectId))
+                .thenThrow(new ResourceNotFoundException("Project with id '" + projectId + "' not found"));
+
+        assertThatThrownBy(() -> assetService.getProjectAssets(otherUserId, projectId))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // --- Update/delete: plain ownership path (no Project involved) ---
+
+    @Test
+    void updateAsset_notOwnedByCaller_noProject_throwsNotFound_andNeverWrites() {
+        UpdateAssetRequest request = new UpdateAssetRequest("New title", null, AssetType.BEAT, null, null, null, null, null, null);
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         assertThatThrownBy(() -> assetService.updateAsset(otherUserId, assetId, request))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -126,9 +271,8 @@ class AssetServiceImplTest {
     @Test
     void updateAsset_ownedByCaller_appliesMapperToExistingEntityAndSaves() {
         UpdateAssetRequest request = new UpdateAssetRequest("New title", null, AssetType.BEAT, null, null, null, null, null, null);
-        Asset existing = new Asset();
-        existing.setId(assetId);
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(existing));
+        Asset existing = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
         when(assetRepository.save(existing)).thenReturn(existing);
         AssetResponse expected = mock(AssetResponse.class);
         when(assetMapper.toResponse(existing)).thenReturn(expected);
@@ -141,8 +285,9 @@ class AssetServiceImplTest {
     }
 
     @Test
-    void deleteAsset_notOwnedByCaller_throwsNotFound_andNeverDeletes() {
-        when(assetRepository.findByIdAndUserId(assetId, otherUserId)).thenReturn(Optional.empty());
+    void deleteAsset_notOwnedByCaller_noProject_throwsNotFound_andNeverDeletes() {
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         assertThatThrownBy(() -> assetService.deleteAsset(otherUserId, assetId))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -152,9 +297,8 @@ class AssetServiceImplTest {
 
     @Test
     void deleteAsset_ownedByCaller_deletesIt() {
-        Asset existing = new Asset();
-        existing.setId(assetId);
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(existing));
+        Asset existing = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
 
         assetService.deleteAsset(ownerId, assetId);
 
@@ -163,8 +307,7 @@ class AssetServiceImplTest {
 
     @Test
     void deleteAsset_removesItFromEveryCollectionItBelongedTo_withoutDeletingThoseCollections() {
-        Asset existing = new Asset();
-        existing.setId(assetId);
+        Asset existing = ownedAsset(assetId, ownerId);
 
         // Distinct ids matter here: equality is id-based, so two unsaved (id == null) entities
         // would otherwise be treated as "the same collection" and collide inside the Set.
@@ -175,7 +318,7 @@ class AssetServiceImplTest {
         collectionA.addAsset(existing);
         collectionB.addAsset(existing);
 
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(existing));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
 
         assetService.deleteAsset(ownerId, assetId);
 
@@ -187,10 +330,9 @@ class AssetServiceImplTest {
 
     @Test
     void deleteAsset_withStorageKey_alsoDeletesTheStorageObject() {
-        Asset existing = new Asset();
-        existing.setId(assetId);
+        Asset existing = ownedAsset(assetId, ownerId);
         existing.setStorageKey("users/x/assets/y/z.wav");
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(existing));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
 
         assetService.deleteAsset(ownerId, assetId);
 
@@ -200,9 +342,8 @@ class AssetServiceImplTest {
 
     @Test
     void deleteAsset_withNoStorageKey_neverCallsStorage() {
-        Asset existing = new Asset();
-        existing.setId(assetId); // storageKey left null
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(existing));
+        Asset existing = ownedAsset(assetId, ownerId); // storageKey left null
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
 
         assetService.deleteAsset(ownerId, assetId);
 
@@ -213,10 +354,9 @@ class AssetServiceImplTest {
     void deleteAsset_storageDeleteFails_stillDeletesTheAssetAnyway() {
         // Best-effort by design: the asset is being removed regardless, so a storage-provider
         // hiccup must not block the user from deleting their own asset.
-        Asset existing = new Asset();
-        existing.setId(assetId);
+        Asset existing = ownedAsset(assetId, ownerId);
         existing.setStorageKey("users/x/assets/y/z.wav");
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(existing));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
         doThrow(new StorageException("boom", new RuntimeException()))
                 .when(storageService).delete("users/x/assets/y/z.wav");
 
@@ -224,6 +364,8 @@ class AssetServiceImplTest {
 
         verify(assetRepository).delete(existing);
     }
+
+    // --- Tags: deliberately still strictly owner-only, unaffected by Phase 5 collaboration ---
 
     @Test
     void addTag_ownedAssetAndOwnedTag_addsItAndSaves() {
@@ -325,8 +467,10 @@ class AssetServiceImplTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    // --- Asset<->Project assignment: now routed through ProjectAccessService (EDIT required) ---
+
     @Test
-    void createAsset_withOwnedProjectId_assignsIt() {
+    void createAsset_withEditableProjectId_assignsIt() {
         CreateAssetRequest request = new CreateAssetRequest("Beat", null, AssetType.BEAT, null, null, null, null, null, projectId);
         Asset mapped = new Asset();
         when(assetMapper.toEntity(request)).thenReturn(mapped);
@@ -334,7 +478,7 @@ class AssetServiceImplTest {
 
         Project project = new Project();
         project.setId(projectId);
-        when(projectRepository.findByIdAndUserId(projectId, ownerId)).thenReturn(Optional.of(project));
+        when(projectAccessService.requireEditAccess(ownerId, projectId)).thenReturn(project);
         when(assetRepository.save(mapped)).thenReturn(mapped);
         when(assetMapper.toResponse(mapped)).thenReturn(mock(AssetResponse.class));
 
@@ -344,11 +488,48 @@ class AssetServiceImplTest {
     }
 
     @Test
-    void createAsset_withProjectIdBelongingToAnotherUser_throwsNotFound_andNeverSaves() {
+    void createAsset_editCollaborator_canAssignIntoSharedProject_createdAssetOwnedByThem() {
+        // The core "EDIT collaborator adds a resource" scenario: the new Asset is owned by the
+        // collaborator who created it, NOT silently reassigned to the project owner.
+        CreateAssetRequest request = new CreateAssetRequest("Beat", null, AssetType.BEAT, null, null, null, null, null, projectId);
+        Asset mapped = new Asset();
+        when(assetMapper.toEntity(request)).thenReturn(mapped);
+        User collaboratorRef = userWithId(otherUserId);
+        when(userRepository.getReferenceById(otherUserId)).thenReturn(collaboratorRef);
+
+        Project sharedProject = new Project();
+        sharedProject.setId(projectId);
+        when(projectAccessService.requireEditAccess(otherUserId, projectId)).thenReturn(sharedProject);
+        when(assetRepository.save(mapped)).thenReturn(mapped);
+        when(assetMapper.toResponse(mapped)).thenReturn(mock(AssetResponse.class));
+
+        assetService.createAsset(otherUserId, request);
+
+        assertThat(mapped.getUser()).isSameAs(collaboratorRef);
+        assertThat(mapped.getProject()).isSameAs(sharedProject);
+    }
+
+    @Test
+    void createAsset_withProjectIdOnlyViewable_throwsInsufficientPermission_andNeverSaves() {
+        CreateAssetRequest request = new CreateAssetRequest("Beat", null, AssetType.BEAT, null, null, null, null, null, projectId);
+        when(assetMapper.toEntity(request)).thenReturn(new Asset());
+        when(userRepository.getReferenceById(otherUserId)).thenReturn(new User());
+        when(projectAccessService.requireEditAccess(otherUserId, projectId))
+                .thenThrow(new InsufficientPermissionException("VIEW collaborators cannot perform this action"));
+
+        assertThatThrownBy(() -> assetService.createAsset(otherUserId, request))
+                .isInstanceOf(InsufficientPermissionException.class);
+
+        verify(assetRepository, never()).save(any());
+    }
+
+    @Test
+    void createAsset_withUnrelatedProjectId_throwsNotFound_andNeverSaves() {
         CreateAssetRequest request = new CreateAssetRequest("Beat", null, AssetType.BEAT, null, null, null, null, null, projectId);
         when(assetMapper.toEntity(request)).thenReturn(new Asset());
         when(userRepository.getReferenceById(ownerId)).thenReturn(new User());
-        when(projectRepository.findByIdAndUserId(projectId, ownerId)).thenReturn(Optional.empty());
+        when(projectAccessService.requireEditAccess(ownerId, projectId))
+                .thenThrow(new ResourceNotFoundException("Project with id '" + projectId + "' not found"));
 
         assertThatThrownBy(() -> assetService.createAsset(ownerId, request))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -368,16 +549,15 @@ class AssetServiceImplTest {
         assetService.createAsset(ownerId, request);
 
         assertThat(mapped.getProject()).isNull();
-        verify(projectRepository, never()).findByIdAndUserId(any(), any());
+        verify(projectAccessService, never()).requireEditAccess(any(), any());
     }
 
     @Test
     void updateAsset_omittingProjectId_unassignsExistingProject() {
         UpdateAssetRequest request = new UpdateAssetRequest("Title", null, AssetType.BEAT, null, null, null, null, null, null);
-        Asset existing = new Asset();
-        existing.setId(assetId);
+        Asset existing = ownedAsset(assetId, ownerId);
         existing.setProject(new Project()); // previously assigned to some project
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(existing));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(existing));
         when(assetRepository.save(existing)).thenReturn(existing);
         when(assetMapper.toResponse(existing)).thenReturn(mock(AssetResponse.class));
 
@@ -392,9 +572,8 @@ class AssetServiceImplTest {
 
     @Test
     void uploadFile_firstUpload_setsStorageKeyAndMetadata_noOldObjectToClean() throws Exception {
-        Asset asset = new Asset();
-        asset.setId(assetId); // storageKey starts null
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        Asset asset = ownedAsset(assetId, ownerId); // storageKey starts null
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
         when(assetRepository.save(asset)).thenReturn(asset);
         when(assetMapper.toResponse(asset)).thenReturn(mock(AssetResponse.class));
 
@@ -409,11 +588,29 @@ class AssetServiceImplTest {
     }
 
     @Test
+    void uploadFile_byEditCollaborator_keysUnderTheAssetsOwner_notTheCollaborator() throws Exception {
+        // The storage key's namespace must stay stable regardless of who acts on the asset --
+        // otherwise a collaborator's uploads would scatter objects across the wrong prefix.
+        Project project = new Project();
+        project.setId(projectId);
+        Asset asset = ownedAsset(assetId, ownerId);
+        asset.setProject(project);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
+        when(projectAccessService.requireEditAccess(otherUserId, projectId)).thenReturn(project);
+        when(assetRepository.save(asset)).thenReturn(asset);
+        when(assetMapper.toResponse(asset)).thenReturn(mock(AssetResponse.class));
+
+        MultipartFile file = new MockMultipartFile("file", "beat.wav", "audio/wav", VALID_WAV_BYTES);
+        assetService.uploadFile(otherUserId, assetId, file);
+
+        assertThat(asset.getStorageKey()).contains("users/" + ownerId).doesNotContain("users/" + otherUserId);
+    }
+
+    @Test
     void uploadFile_replacingExisting_uploadsNewThenDeletesOld_inThatOrder() throws Exception {
-        Asset asset = new Asset();
-        asset.setId(assetId);
+        Asset asset = ownedAsset(assetId, ownerId);
         asset.setStorageKey("users/x/assets/y/old.wav");
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
         when(assetRepository.save(asset)).thenReturn(asset);
         when(assetMapper.toResponse(asset)).thenReturn(mock(AssetResponse.class));
 
@@ -430,10 +627,9 @@ class AssetServiceImplTest {
     @Test
     void uploadFile_replaceOldObjectDeleteFails_stillSucceeds() throws Exception {
         // Best-effort cleanup: the asset already correctly points at the new file by this point.
-        Asset asset = new Asset();
-        asset.setId(assetId);
+        Asset asset = ownedAsset(assetId, ownerId);
         asset.setStorageKey("users/x/assets/y/old.wav");
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
         when(assetRepository.save(asset)).thenReturn(asset);
         AssetResponse expected = mock(AssetResponse.class);
         when(assetMapper.toResponse(asset)).thenReturn(expected);
@@ -446,8 +642,9 @@ class AssetServiceImplTest {
     }
 
     @Test
-    void uploadFile_assetNotOwnedByCaller_throwsNotFound_neverTouchesStorage() {
-        when(assetRepository.findByIdAndUserId(assetId, otherUserId)).thenReturn(Optional.empty());
+    void uploadFile_assetNotOwnedByCaller_noProject_throwsNotFound_neverTouchesStorage() {
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         MultipartFile file = new MockMultipartFile("file", "beat.wav", "audio/wav", VALID_WAV_BYTES);
         assertThatThrownBy(() -> assetService.uploadFile(otherUserId, assetId, file))
@@ -457,10 +654,26 @@ class AssetServiceImplTest {
     }
 
     @Test
+    void uploadFile_viewCollaborator_isRejected_neverTouchesStorage() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset asset = ownedAsset(assetId, ownerId);
+        asset.setProject(project);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
+        when(projectAccessService.requireEditAccess(otherUserId, projectId))
+                .thenThrow(new InsufficientPermissionException("VIEW collaborators cannot perform this action"));
+
+        MultipartFile file = new MockMultipartFile("file", "beat.wav", "audio/wav", VALID_WAV_BYTES);
+        assertThatThrownBy(() -> assetService.uploadFile(otherUserId, assetId, file))
+                .isInstanceOf(InsufficientPermissionException.class);
+
+        verify(storageService, never()).upload(anyString(), any(), anyLong(), anyString());
+    }
+
+    @Test
     void uploadFile_invalidFile_throwsBeforeTouchingStorageOrDatabase() {
-        Asset asset = new Asset();
-        asset.setId(assetId);
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         MultipartFile badFile = new MockMultipartFile("file", "not-audio.txt", "text/plain", "hello".getBytes());
         assertThatThrownBy(() -> assetService.uploadFile(ownerId, assetId, badFile))
@@ -472,10 +685,9 @@ class AssetServiceImplTest {
 
     @Test
     void getFileAccessUrl_ownedAssetWithFile_returnsPresignedUrl() {
-        Asset asset = new Asset();
-        asset.setId(assetId);
+        Asset asset = ownedAsset(assetId, ownerId);
         asset.setStorageKey("users/x/assets/y/z.wav");
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
         java.net.URI presigned = java.net.URI.create("https://r2.example.com/signed?sig=abc");
         when(storageService.generatePresignedDownloadUrl(eq("users/x/assets/y/z.wav"), any())).thenReturn(presigned);
 
@@ -486,18 +698,35 @@ class AssetServiceImplTest {
     }
 
     @Test
+    void getFileAccessUrl_viewCollaborator_canDownload() {
+        Project project = new Project();
+        project.setId(projectId);
+        Asset asset = ownedAsset(assetId, ownerId);
+        asset.setProject(project);
+        asset.setStorageKey("users/x/assets/y/z.wav");
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
+        when(projectAccessService.requireViewAccess(otherUserId, projectId)).thenReturn(project);
+        java.net.URI presigned = java.net.URI.create("https://r2.example.com/signed?sig=abc");
+        when(storageService.generatePresignedDownloadUrl(eq("users/x/assets/y/z.wav"), any())).thenReturn(presigned);
+
+        var response = assetService.getFileAccessUrl(otherUserId, assetId);
+
+        assertThat(response.url()).isEqualTo(presigned.toString());
+    }
+
+    @Test
     void getFileAccessUrl_assetHasNoFile_throwsNotFound() {
-        Asset asset = new Asset();
-        asset.setId(assetId); // storageKey null
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        Asset asset = ownedAsset(assetId, ownerId); // storageKey null
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         assertThatThrownBy(() -> assetService.getFileAccessUrl(ownerId, assetId))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void getFileAccessUrl_assetNotOwnedByCaller_throwsNotFound() {
-        when(assetRepository.findByIdAndUserId(assetId, otherUserId)).thenReturn(Optional.empty());
+    void getFileAccessUrl_assetNotOwnedByCaller_noProject_throwsNotFound() {
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         assertThatThrownBy(() -> assetService.getFileAccessUrl(otherUserId, assetId))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -505,12 +734,11 @@ class AssetServiceImplTest {
 
     @Test
     void deleteFile_ownedAssetWithFile_clearsStorageMetadata() {
-        Asset asset = new Asset();
-        asset.setId(assetId);
+        Asset asset = ownedAsset(assetId, ownerId);
         asset.setStorageKey("users/x/assets/y/z.wav");
         asset.setFileSizeBytes(123L);
         asset.setAudioFormat("wav");
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
         when(assetRepository.save(asset)).thenReturn(asset);
         when(assetMapper.toResponse(asset)).thenReturn(mock(AssetResponse.class));
 
@@ -527,10 +755,9 @@ class AssetServiceImplTest {
         // Unlike deleteAsset/uploadFile's old-object cleanup, THIS is the user's explicit
         // "remove the file" request — a failure here must not be swallowed, since silently
         // clearing the DB reference could leave the file stranded in R2 with no way to find it again.
-        Asset asset = new Asset();
-        asset.setId(assetId);
+        Asset asset = ownedAsset(assetId, ownerId);
         asset.setStorageKey("users/x/assets/y/z.wav");
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
         doThrow(new StorageException("boom", new RuntimeException())).when(storageService).delete("users/x/assets/y/z.wav");
 
         assertThatThrownBy(() -> assetService.deleteFile(ownerId, assetId)).isInstanceOf(StorageException.class);
@@ -541,9 +768,8 @@ class AssetServiceImplTest {
 
     @Test
     void deleteFile_assetHasNoFile_throwsNotFound() {
-        Asset asset = new Asset();
-        asset.setId(assetId);
-        when(assetRepository.findByIdAndUserId(assetId, ownerId)).thenReturn(Optional.of(asset));
+        Asset asset = ownedAsset(assetId, ownerId);
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
         assertThatThrownBy(() -> assetService.deleteFile(ownerId, assetId))
                 .isInstanceOf(ResourceNotFoundException.class);

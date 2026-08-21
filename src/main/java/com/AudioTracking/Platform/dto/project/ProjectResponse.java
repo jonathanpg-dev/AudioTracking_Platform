@@ -11,6 +11,8 @@ public record ProjectResponse(
         String description,
         ProjectStatus status,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        UUID clientId,
+        String clientName
 ) {
 }

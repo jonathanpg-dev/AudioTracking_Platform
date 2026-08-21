@@ -15,10 +15,10 @@ import com.AudioTracking.Platform.exception.ResourceNotFoundException;
 import com.AudioTracking.Platform.exception.StorageException;
 import com.AudioTracking.Platform.mapper.AssetMapper;
 import com.AudioTracking.Platform.repository.AssetRepository;
-import com.AudioTracking.Platform.repository.ProjectRepository;
 import com.AudioTracking.Platform.repository.TagRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
 import com.AudioTracking.Platform.service.AssetService;
+import com.AudioTracking.Platform.service.ProjectAccessService;
 import com.AudioTracking.Platform.storage.AudioFileValidator;
 import com.AudioTracking.Platform.storage.StorageService;
 import org.slf4j.Logger;
@@ -45,31 +45,34 @@ public class AssetServiceImpl implements AssetService {
     private final AssetRepository assetRepository;
     private final UserRepository userRepository;
     private final TagRepository tagRepository;
-    private final ProjectRepository projectRepository;
+    private final ProjectAccessService projectAccessService;
     private final StorageService storageService;
     private final AssetMapper assetMapper;
     private final long presignedUrlExpirationMinutes;
 
     public AssetServiceImpl(AssetRepository assetRepository, UserRepository userRepository,
-                             TagRepository tagRepository, ProjectRepository projectRepository,
+                             TagRepository tagRepository, ProjectAccessService projectAccessService,
                              StorageService storageService, AssetMapper assetMapper,
                              @Value("${storage.presigned-url-expiration-minutes}") long presignedUrlExpirationMinutes) {
         this.assetRepository = assetRepository;
         this.userRepository = userRepository;
         this.tagRepository = tagRepository;
-        this.projectRepository = projectRepository;
+        this.projectAccessService = projectAccessService;
         this.storageService = storageService;
         this.assetMapper = assetMapper;
         this.presignedUrlExpirationMinutes = presignedUrlExpirationMinutes;
     }
 
     @Override
-    public AssetResponse createAsset(UUID ownerId, CreateAssetRequest request) {
+    public AssetResponse createAsset(UUID requesterId, CreateAssetRequest request) {
         Asset asset = assetMapper.toEntity(request);
+        // The creator is always the owner -- even when the created asset is going straight into
+        // someone else's shared project (an EDIT collaborator adding a resource). Sharing never
+        // transfers ownership; see docs/collaboration.md.
         // getReferenceById avoids an extra SELECT: the caller is already an authenticated
         // user resolved from the JWT, so we only need their id to set the FK, not the full row.
-        asset.setUser(userRepository.getReferenceById(ownerId));
-        asset.setProject(resolveOwnedProjectOrNull(ownerId, request.projectId()));
+        asset.setUser(userRepository.getReferenceById(requesterId));
+        asset.setProject(resolveAssignableProjectOrNull(requesterId, request.projectId()));
         return assetMapper.toResponse(assetRepository.save(asset));
     }
 
@@ -87,24 +90,26 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
-    public AssetResponse getAsset(UUID ownerId, UUID assetId) {
-        return assetMapper.toResponse(findOwnedOrThrow(ownerId, assetId));
+    public AssetResponse getAsset(UUID requesterId, UUID assetId) {
+        return assetMapper.toResponse(findAccessibleOrThrow(requesterId, assetId, RequiredAccess.VIEW));
     }
 
     @Override
-    public AssetResponse updateAsset(UUID ownerId, UUID assetId, UpdateAssetRequest request) {
-        Asset existing = findOwnedOrThrow(ownerId, assetId);
+    public AssetResponse updateAsset(UUID requesterId, UUID assetId, UpdateAssetRequest request) {
+        Asset existing = findAccessibleOrThrow(requesterId, assetId, RequiredAccess.EDIT);
         assetMapper.updateEntity(request, existing);
         // Full-replace semantics like every other field on this DTO: omitting projectId (or
-        // sending null) unassigns the asset from whatever project it was previously in.
-        existing.setProject(resolveOwnedProjectOrNull(ownerId, request.projectId()));
+        // sending null) unassigns the asset from whatever project it was previously in. Ownership
+        // (existing.user) is deliberately never touched here -- a collaborator editing this asset
+        // never becomes its owner.
+        existing.setProject(resolveAssignableProjectOrNull(requesterId, request.projectId()));
         return assetMapper.toResponse(assetRepository.save(existing));
     }
 
     @Override
     @Transactional // collection-membership cleanup + the delete itself must succeed together
-    public void deleteAsset(UUID ownerId, UUID assetId) {
-        Asset existing = findOwnedOrThrow(ownerId, assetId);
+    public void deleteAsset(UUID requesterId, UUID assetId) {
+        Asset existing = findAccessibleOrThrow(requesterId, assetId, RequiredAccess.EDIT);
         // Asset is the non-owning side of Collection<->Asset (Collection owns it), so unlike
         // asset_tags above, Hibernate won't clean up collection_assets automatically here.
         // Same object-graph approach as everywhere else that hit this: iterate a copy, since
@@ -155,12 +160,15 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
-    public AssetResponse uploadFile(UUID ownerId, UUID assetId, MultipartFile file) {
-        Asset asset = findOwnedOrThrow(ownerId, assetId);
+    public AssetResponse uploadFile(UUID requesterId, UUID assetId, MultipartFile file) {
+        Asset asset = findAccessibleOrThrow(requesterId, assetId, RequiredAccess.EDIT);
         AudioFileValidator.ValidatedAudioFile validated = AudioFileValidator.validate(file);
 
         String previousKey = asset.getStorageKey(); // null if this is a first-time upload
-        String newKey = buildStorageKey(ownerId, assetId, validated.extension());
+        // Namespaced under the ASSET'S owner, not necessarily the requester -- an EDIT
+        // collaborator uploading into someone else's asset must not scatter objects under their
+        // own "users/{id}/..." prefix; the key's namespace stays stable regardless of who acts on it.
+        String newKey = buildStorageKey(asset.getUser().getId(), assetId, validated.extension());
 
         // Order matters here (validate -> upload -> persist -> clean up old): the new object
         // must be safely in R2 and the database updated to point at it BEFORE the old object is
@@ -193,8 +201,8 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
-    public FileAccessResponse getFileAccessUrl(UUID ownerId, UUID assetId) {
-        Asset asset = findOwnedOrThrow(ownerId, assetId);
+    public FileAccessResponse getFileAccessUrl(UUID requesterId, UUID assetId) {
+        Asset asset = findAccessibleOrThrow(requesterId, assetId, RequiredAccess.VIEW);
         if (asset.getStorageKey() == null) {
             throw new ResourceNotFoundException("Asset with id '" + assetId + "' has no associated audio file");
         }
@@ -205,8 +213,8 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
-    public AssetResponse deleteFile(UUID ownerId, UUID assetId) {
-        Asset asset = findOwnedOrThrow(ownerId, assetId);
+    public AssetResponse deleteFile(UUID requesterId, UUID assetId) {
+        Asset asset = findAccessibleOrThrow(requesterId, assetId, RequiredAccess.EDIT);
         if (asset.getStorageKey() == null) {
             throw new ResourceNotFoundException("Asset with id '" + assetId + "' has no associated audio file");
         }
@@ -223,6 +231,13 @@ public class AssetServiceImpl implements AssetService {
         return assetMapper.toResponse(assetRepository.save(asset));
     }
 
+    @Override
+    public List<AssetResponse> getProjectAssets(UUID requesterId, UUID projectId) {
+        // Owner, VIEW, or EDIT collaborator can all browse a Project's assets.
+        projectAccessService.requireViewAccess(requesterId, projectId);
+        return assetMapper.toResponseList(assetRepository.findAllByProjectId(projectId));
+    }
+
     // Never derived from client input beyond the validated extension — userId/assetId come from
     // the authenticated principal and the already-ownership-checked Asset, and the random UUID
     // segment guarantees two uploads never collide even if replacing the same asset's file
@@ -231,19 +246,58 @@ public class AssetServiceImpl implements AssetService {
         return "users/%s/assets/%s/%s.%s".formatted(ownerId, assetId, UUID.randomUUID(), extension);
     }
 
+    // Strictly owner-only -- used only by addTag/removeTag above. Tags are their own
+    // independently-owned resource with no project relationship at all (see Tag.java), so Phase 5
+    // collaboration deliberately does NOT extend to them: a collaborator would need to reference
+    // tags they don't own, which raises whose-tag-is-it questions this app doesn't have an answer
+    // for yet. See docs/collaboration.md.
     private Asset findOwnedOrThrow(UUID ownerId, UUID assetId) {
         return assetRepository.findByIdAndUserId(assetId, ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Asset with id '" + assetId + "' not found"));
     }
 
-    // null projectId means "no project" — not an error. A non-null id that isn't owned by this
-    // user is treated the same as a nonexistent one: a user must never be able to assign their
-    // asset into someone else's project, and this must not reveal whether that project exists.
-    private Project resolveOwnedProjectOrNull(UUID ownerId, UUID projectId) {
+    private enum RequiredAccess { VIEW, EDIT }
+
+    // The collaboration-aware counterpart to findOwnedOrThrow above: succeeds for the asset's
+    // owner OR a sufficiently-permissioned collaborator on the asset's Project. Asset ownership
+    // itself is completely unaffected by this -- it only ever governs what THIS request may do,
+    // never who owns the row. See docs/collaboration.md.
+    private Asset findAccessibleOrThrow(UUID requesterId, UUID assetId, RequiredAccess required) {
+        Asset asset = assetRepository.findById(assetId)
+                .orElseThrow(() -> new ResourceNotFoundException("Asset with id '" + assetId + "' not found"));
+
+        if (asset.getUser().getId().equals(requesterId)) {
+            return asset; // owner: full access regardless of `required`
+        }
+
+        if (asset.getProject() == null) {
+            // Not owned by the requester and not part of any project -> nothing to share
+            // through. Same 404 an unrelated user gets for a nonexistent asset.
+            throw new ResourceNotFoundException("Asset with id '" + assetId + "' not found");
+        }
+
+        // Delegates the actual permission decision to ProjectAccessService so it lives in exactly
+        // one place; propagates its ResourceNotFoundException (unrelated to the project) or
+        // InsufficientPermissionException (e.g. a VIEW collaborator attempting an EDIT-required
+        // operation) as-is.
+        UUID projectId = asset.getProject().getId();
+        if (required == RequiredAccess.EDIT) {
+            projectAccessService.requireEditAccess(requesterId, projectId);
+        } else {
+            projectAccessService.requireViewAccess(requesterId, projectId);
+        }
+        return asset;
+    }
+
+    // null projectId means "no project" — not an error. Requires EDIT access (owner or EDIT
+    // collaborator) on the target project: matches the EDIT permission's "can add/modify
+    // resources in the Project" and prevents moving an asset into a project the requester can
+    // only view, or has no relationship to at all -- a wrong id and an unauthorized real id both
+    // produce the same error, never revealing whether the project exists.
+    private Project resolveAssignableProjectOrNull(UUID requesterId, UUID projectId) {
         if (projectId == null) {
             return null;
         }
-        return projectRepository.findByIdAndUserId(projectId, ownerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project with id '" + projectId + "' not found"));
+        return projectAccessService.requireEditAccess(requesterId, projectId);
     }
 }

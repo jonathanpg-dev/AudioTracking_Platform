@@ -3,6 +3,7 @@ package com.AudioTracking.Platform.mapper;
 import com.AudioTracking.Platform.dto.project.CreateProjectRequest;
 import com.AudioTracking.Platform.dto.project.ProjectResponse;
 import com.AudioTracking.Platform.dto.project.UpdateProjectRequest;
+import com.AudioTracking.Platform.entity.Client;
 import com.AudioTracking.Platform.entity.Project;
 import com.AudioTracking.Platform.entity.ProjectStatus;
 import org.springframework.stereotype.Component;
@@ -20,6 +21,9 @@ public class ProjectMapper {
         return project;
     }
 
+    // Deliberately does NOT touch client here — clientId resolution needs a repository lookup
+    // (ownership check), so ProjectServiceImpl sets it separately after calling this, same as
+    // AssetMapper/AssetServiceImpl handle Asset.project.
     public void updateEntity(UpdateProjectRequest request, Project existing) {
         existing.setName(request.name());
         existing.setDescription(request.description());
@@ -27,13 +31,16 @@ public class ProjectMapper {
     }
 
     public ProjectResponse toResponse(Project project) {
+        Client client = project.getClient();
         return new ProjectResponse(
                 project.getId(),
                 project.getName(),
                 project.getDescription(),
                 project.getStatus(),
                 project.getCreatedAt(),
-                project.getUpdatedAt());
+                project.getUpdatedAt(),
+                client == null ? null : client.getId(),
+                client == null ? null : client.getName());
     }
 
     public List<ProjectResponse> toResponseList(List<Project> projects) {
