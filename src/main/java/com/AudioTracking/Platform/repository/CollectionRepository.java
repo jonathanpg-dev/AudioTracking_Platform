@@ -12,4 +12,6 @@ public interface CollectionRepository extends JpaRepository<Collection, UUID> {
     List<Collection> findAllByUserIdOrderByCreatedAtDesc(UUID userId);
 
     Optional<Collection> findByIdAndUserId(UUID id, UUID userId);
+
+    long countByUserId(UUID userId);
 }

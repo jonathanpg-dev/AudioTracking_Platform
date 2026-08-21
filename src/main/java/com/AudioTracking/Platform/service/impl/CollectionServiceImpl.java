@@ -2,6 +2,7 @@ package com.AudioTracking.Platform.service.impl;
 
 import com.AudioTracking.Platform.dto.collection.CollectionResponse;
 import com.AudioTracking.Platform.dto.collection.CreateCollectionRequest;
+import com.AudioTracking.Platform.entity.AnalyticsEventType;
 import com.AudioTracking.Platform.entity.Asset;
 import com.AudioTracking.Platform.entity.Collection;
 import com.AudioTracking.Platform.exception.ResourceNotFoundException;
@@ -9,6 +10,7 @@ import com.AudioTracking.Platform.mapper.CollectionMapper;
 import com.AudioTracking.Platform.repository.AssetRepository;
 import com.AudioTracking.Platform.repository.CollectionRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.CollectionService;
 import org.springframework.stereotype.Service;
 
@@ -21,13 +23,16 @@ public class CollectionServiceImpl implements CollectionService {
     private final CollectionRepository collectionRepository;
     private final UserRepository userRepository;
     private final AssetRepository assetRepository;
+    private final AnalyticsService analyticsService;
     private final CollectionMapper collectionMapper;
 
     public CollectionServiceImpl(CollectionRepository collectionRepository, UserRepository userRepository,
-                                  AssetRepository assetRepository, CollectionMapper collectionMapper) {
+                                  AssetRepository assetRepository, AnalyticsService analyticsService,
+                                  CollectionMapper collectionMapper) {
         this.collectionRepository = collectionRepository;
         this.userRepository = userRepository;
         this.assetRepository = assetRepository;
+        this.analyticsService = analyticsService;
         this.collectionMapper = collectionMapper;
     }
 
@@ -35,7 +40,9 @@ public class CollectionServiceImpl implements CollectionService {
     public CollectionResponse createCollection(UUID ownerId, CreateCollectionRequest request) {
         Collection collection = collectionMapper.toEntity(request);
         collection.setUser(userRepository.getReferenceById(ownerId));
-        return collectionMapper.toResponse(collectionRepository.save(collection));
+        Collection saved = collectionRepository.save(collection);
+        analyticsService.record(ownerId, AnalyticsEventType.COLLECTION_CREATED, null, null);
+        return collectionMapper.toResponse(saved);
     }
 
     @Override

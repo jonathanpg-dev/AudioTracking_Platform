@@ -3,6 +3,7 @@ package com.AudioTracking.Platform.service.impl;
 import com.AudioTracking.Platform.dto.project.CreateProjectShareRequest;
 import com.AudioTracking.Platform.dto.project.ProjectShareResponse;
 import com.AudioTracking.Platform.dto.project.UpdateProjectShareRequest;
+import com.AudioTracking.Platform.entity.AnalyticsEventType;
 import com.AudioTracking.Platform.entity.Project;
 import com.AudioTracking.Platform.entity.ProjectShare;
 import com.AudioTracking.Platform.entity.User;
@@ -11,6 +12,7 @@ import com.AudioTracking.Platform.exception.ResourceNotFoundException;
 import com.AudioTracking.Platform.mapper.ProjectShareMapper;
 import com.AudioTracking.Platform.repository.ProjectShareRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.ProjectAccessService;
 import com.AudioTracking.Platform.service.ProjectShareService;
 import org.springframework.stereotype.Service;
@@ -24,13 +26,16 @@ public class ProjectShareServiceImpl implements ProjectShareService {
     private final ProjectShareRepository projectShareRepository;
     private final UserRepository userRepository;
     private final ProjectAccessService projectAccessService;
+    private final AnalyticsService analyticsService;
     private final ProjectShareMapper projectShareMapper;
 
     public ProjectShareServiceImpl(ProjectShareRepository projectShareRepository, UserRepository userRepository,
-                                    ProjectAccessService projectAccessService, ProjectShareMapper projectShareMapper) {
+                                    ProjectAccessService projectAccessService, AnalyticsService analyticsService,
+                                    ProjectShareMapper projectShareMapper) {
         this.projectShareRepository = projectShareRepository;
         this.userRepository = userRepository;
         this.projectAccessService = projectAccessService;
+        this.analyticsService = analyticsService;
         this.projectShareMapper = projectShareMapper;
     }
 
@@ -51,7 +56,11 @@ public class ProjectShareServiceImpl implements ProjectShareService {
         share.setProject(project);
         share.setUser(target);
         share.setPermission(request.permission());
-        return projectShareMapper.toResponse(projectShareRepository.save(share));
+        ProjectShare saved = projectShareRepository.save(share);
+        // ownerId, not target.getId(): PROJECT_SHARED records the sharing action the OWNER
+        // performed, not something the new collaborator did.
+        analyticsService.record(ownerId, AnalyticsEventType.PROJECT_SHARED, null, projectId);
+        return projectShareMapper.toResponse(saved);
     }
 
     @Override

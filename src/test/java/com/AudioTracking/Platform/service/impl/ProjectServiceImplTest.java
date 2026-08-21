@@ -15,6 +15,7 @@ import com.AudioTracking.Platform.repository.AssetRepository;
 import com.AudioTracking.Platform.repository.ClientRepository;
 import com.AudioTracking.Platform.repository.ProjectRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.ProjectAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,7 @@ class ProjectServiceImplTest {
     @Mock private AssetRepository assetRepository;
     @Mock private ClientRepository clientRepository;
     @Mock private ProjectAccessService projectAccessService;
+    @Mock private AnalyticsService analyticsService;
     @Mock private ProjectMapper projectMapper;
 
     private ProjectServiceImpl projectService;
@@ -55,7 +57,7 @@ class ProjectServiceImplTest {
     @BeforeEach
     void setUp() {
         projectService = new ProjectServiceImpl(projectRepository, userRepository, assetRepository,
-                clientRepository, projectAccessService, projectMapper);
+                clientRepository, projectAccessService, analyticsService, projectMapper);
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.AudioTracking.Platform.dto.asset.CreateAssetRequest;
 import com.AudioTracking.Platform.dto.asset.FileAccessResponse;
 import com.AudioTracking.Platform.dto.asset.UpdateAssetRequest;
 import org.springframework.data.domain.Pageable;
+import com.AudioTracking.Platform.entity.AnalyticsEventType;
 import com.AudioTracking.Platform.entity.Asset;
 import com.AudioTracking.Platform.entity.Collection;
 import com.AudioTracking.Platform.entity.Project;
@@ -17,6 +18,7 @@ import com.AudioTracking.Platform.mapper.AssetMapper;
 import com.AudioTracking.Platform.repository.AssetRepository;
 import com.AudioTracking.Platform.repository.TagRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.AssetService;
 import com.AudioTracking.Platform.service.ProjectAccessService;
 import com.AudioTracking.Platform.storage.AudioFileValidator;
@@ -47,18 +49,21 @@ public class AssetServiceImpl implements AssetService {
     private final TagRepository tagRepository;
     private final ProjectAccessService projectAccessService;
     private final StorageService storageService;
+    private final AnalyticsService analyticsService;
     private final AssetMapper assetMapper;
     private final long presignedUrlExpirationMinutes;
 
     public AssetServiceImpl(AssetRepository assetRepository, UserRepository userRepository,
                              TagRepository tagRepository, ProjectAccessService projectAccessService,
-                             StorageService storageService, AssetMapper assetMapper,
+                             StorageService storageService, AnalyticsService analyticsService,
+                             AssetMapper assetMapper,
                              @Value("${storage.presigned-url-expiration-minutes}") long presignedUrlExpirationMinutes) {
         this.assetRepository = assetRepository;
         this.userRepository = userRepository;
         this.tagRepository = tagRepository;
         this.projectAccessService = projectAccessService;
         this.storageService = storageService;
+        this.analyticsService = analyticsService;
         this.assetMapper = assetMapper;
         this.presignedUrlExpirationMinutes = presignedUrlExpirationMinutes;
     }
@@ -110,6 +115,10 @@ public class AssetServiceImpl implements AssetService {
     @Transactional // collection-membership cleanup + the delete itself must succeed together
     public void deleteAsset(UUID requesterId, UUID assetId) {
         Asset existing = findAccessibleOrThrow(requesterId, assetId, RequiredAccess.EDIT);
+        // Captured before the delete below: the event needs this snapshot regardless of whether
+        // the in-memory entity stays readable afterward (plain UUID, not a live relationship --
+        // see AnalyticsEvent.projectId).
+        UUID projectId = projectIdOf(existing);
         // Asset is the non-owning side of Collection<->Asset (Collection owns it), so unlike
         // asset_tags above, Hibernate won't clean up collection_assets automatically here.
         // Same object-graph approach as everywhere else that hit this: iterate a copy, since
@@ -132,6 +141,7 @@ public class AssetServiceImpl implements AssetService {
         }
 
         assetRepository.delete(existing);
+        analyticsService.record(requesterId, AnalyticsEventType.ASSET_DELETED, assetId, projectId);
     }
 
     @Override
@@ -185,6 +195,7 @@ public class AssetServiceImpl implements AssetService {
         asset.setFileSizeBytes(file.getSize());
         asset.setAudioFormat(validated.extension());
         Asset saved = assetRepository.save(asset);
+        analyticsService.record(requesterId, AnalyticsEventType.ASSET_UPLOADED, assetId, projectIdOf(saved));
 
         if (previousKey != null) {
             // Best-effort: the asset already correctly points at the new file regardless of
@@ -201,7 +212,7 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
-    public FileAccessResponse getFileAccessUrl(UUID requesterId, UUID assetId) {
+    public FileAccessResponse getFileAccessUrl(UUID requesterId, UUID assetId, boolean download) {
         Asset asset = findAccessibleOrThrow(requesterId, assetId, RequiredAccess.VIEW);
         if (asset.getStorageKey() == null) {
             throw new ResourceNotFoundException("Asset with id '" + assetId + "' has no associated audio file");
@@ -209,6 +220,10 @@ public class AssetServiceImpl implements AssetService {
 
         Duration expiration = Duration.ofMinutes(presignedUrlExpirationMinutes);
         URI url = storageService.generatePresignedDownloadUrl(asset.getStorageKey(), expiration);
+        // `download` only ever changes which analytics event gets recorded, never the access
+        // check or the URL itself -- see AssetService#getFileAccessUrl and docs/analytics.md.
+        AnalyticsEventType eventType = download ? AnalyticsEventType.ASSET_DOWNLOADED : AnalyticsEventType.ASSET_PLAYED;
+        analyticsService.record(requesterId, eventType, assetId, projectIdOf(asset));
         return new FileAccessResponse(url.toString(), Instant.now().plus(expiration));
     }
 
@@ -236,6 +251,11 @@ public class AssetServiceImpl implements AssetService {
         // Owner, VIEW, or EDIT collaborator can all browse a Project's assets.
         projectAccessService.requireViewAccess(requesterId, projectId);
         return assetMapper.toResponseList(assetRepository.findAllByProjectId(projectId));
+    }
+
+    // Snapshot helper for analytics events: null-safe extraction of an Asset's current project id.
+    private UUID projectIdOf(Asset asset) {
+        return asset.getProject() == null ? null : asset.getProject().getId();
     }
 
     // Never derived from client input beyond the validated extension — userId/assetId come from

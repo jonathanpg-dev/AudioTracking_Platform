@@ -10,6 +10,7 @@ import com.AudioTracking.Platform.mapper.CollectionMapper;
 import com.AudioTracking.Platform.repository.AssetRepository;
 import com.AudioTracking.Platform.repository.CollectionRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +35,7 @@ class CollectionServiceImplTest {
     @Mock private CollectionRepository collectionRepository;
     @Mock private UserRepository userRepository;
     @Mock private AssetRepository assetRepository;
+    @Mock private AnalyticsService analyticsService;
     @Mock private CollectionMapper collectionMapper;
 
     private CollectionServiceImpl collectionService;
@@ -45,7 +47,7 @@ class CollectionServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        collectionService = new CollectionServiceImpl(collectionRepository, userRepository, assetRepository, collectionMapper);
+        collectionService = new CollectionServiceImpl(collectionRepository, userRepository, assetRepository, analyticsService, collectionMapper);
     }
 
     @Test

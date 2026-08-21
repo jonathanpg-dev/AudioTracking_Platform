@@ -10,6 +10,7 @@ import com.AudioTracking.Platform.mapper.ClientMapper;
 import com.AudioTracking.Platform.repository.ClientRepository;
 import com.AudioTracking.Platform.repository.ProjectRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,7 @@ class ClientServiceImplTest {
     @Mock private ClientRepository clientRepository;
     @Mock private UserRepository userRepository;
     @Mock private ProjectRepository projectRepository;
+    @Mock private AnalyticsService analyticsService;
     @Mock private ClientMapper clientMapper;
 
     private ClientServiceImpl clientService;
@@ -45,7 +47,7 @@ class ClientServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        clientService = new ClientServiceImpl(clientRepository, userRepository, projectRepository, clientMapper);
+        clientService = new ClientServiceImpl(clientRepository, userRepository, projectRepository, analyticsService, clientMapper);
     }
 
     @Test

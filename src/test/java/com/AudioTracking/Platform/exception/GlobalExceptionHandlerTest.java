@@ -1,6 +1,7 @@
 package com.AudioTracking.Platform.exception;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -10,6 +11,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 
@@ -123,6 +125,17 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
         assertThat(response.getBody().message()).isEqualTo("A storage operation failed. Please try again.");
         assertThat(response.getBody().message()).doesNotContain("r2.internal-bucket-name.example");
+    }
+
+    @Test
+    void noResourceFound_returns404_notTheGeneric500() {
+        // A route that matches no controller mapping and no static resource is a routing miss,
+        // not a server failure -- discovered via AnalyticsAuthorizationIntegrationTest hitting a
+        // genuinely nonexistent endpoint and unexpectedly getting a 500 before this handler existed.
+        ResponseEntity<ApiError> response = handler.handleNoResourceFound(
+                new NoResourceFoundException(HttpMethod.POST, "/api/v1/analytics/events", "api/v1/analytics/events"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     @Test

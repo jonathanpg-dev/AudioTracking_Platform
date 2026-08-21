@@ -99,10 +99,13 @@ public class AssetController {
 
     // Returns a short-lived signed URL, not the file itself — the file stays private in R2 and
     // is never proxied through this server or exposed at a permanent public address.
+    // `download` is a caller-declared intent (defaults to a "play" access) used only to pick
+    // which analytics event gets recorded -- see AssetService#getFileAccessUrl.
     @GetMapping("/{id}/file")
     public ResponseEntity<FileAccessResponse> getFileAccessUrl(@AuthenticationPrincipal CustomUserDetails currentUser,
-                                                                 @PathVariable UUID id) {
-        return ResponseEntity.ok(assetService.getFileAccessUrl(currentUser.getId(), id));
+                                                                 @PathVariable UUID id,
+                                                                 @RequestParam(defaultValue = "false") boolean download) {
+        return ResponseEntity.ok(assetService.getFileAccessUrl(currentUser.getId(), id, download));
     }
 
     @DeleteMapping("/{id}/file")

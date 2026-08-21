@@ -3,6 +3,7 @@ package com.AudioTracking.Platform.service.impl;
 import com.AudioTracking.Platform.dto.project.CreateProjectRequest;
 import com.AudioTracking.Platform.dto.project.ProjectResponse;
 import com.AudioTracking.Platform.dto.project.UpdateProjectRequest;
+import com.AudioTracking.Platform.entity.AnalyticsEventType;
 import com.AudioTracking.Platform.entity.Asset;
 import com.AudioTracking.Platform.entity.Client;
 import com.AudioTracking.Platform.entity.Project;
@@ -12,6 +13,7 @@ import com.AudioTracking.Platform.repository.AssetRepository;
 import com.AudioTracking.Platform.repository.ClientRepository;
 import com.AudioTracking.Platform.repository.ProjectRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.ProjectAccessService;
 import com.AudioTracking.Platform.service.ProjectService;
 import org.springframework.stereotype.Service;
@@ -28,16 +30,19 @@ public class ProjectServiceImpl implements ProjectService {
     private final AssetRepository assetRepository;
     private final ClientRepository clientRepository;
     private final ProjectAccessService projectAccessService;
+    private final AnalyticsService analyticsService;
     private final ProjectMapper projectMapper;
 
     public ProjectServiceImpl(ProjectRepository projectRepository, UserRepository userRepository,
                                AssetRepository assetRepository, ClientRepository clientRepository,
-                               ProjectAccessService projectAccessService, ProjectMapper projectMapper) {
+                               ProjectAccessService projectAccessService, AnalyticsService analyticsService,
+                               ProjectMapper projectMapper) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.assetRepository = assetRepository;
         this.clientRepository = clientRepository;
         this.projectAccessService = projectAccessService;
+        this.analyticsService = analyticsService;
         this.projectMapper = projectMapper;
     }
 
@@ -46,7 +51,9 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectMapper.toEntity(request);
         project.setUser(userRepository.getReferenceById(ownerId));
         project.setClient(resolveOwnedClientOrNull(ownerId, request.clientId()));
-        return projectMapper.toResponse(projectRepository.save(project));
+        Project saved = projectRepository.save(project);
+        analyticsService.record(ownerId, AnalyticsEventType.PROJECT_CREATED, null, saved.getId());
+        return projectMapper.toResponse(saved);
     }
 
     @Override
@@ -70,7 +77,9 @@ public class ProjectServiceImpl implements ProjectService {
         Project existing = projectAccessService.requireOwnerAccess(ownerId, projectId);
         projectMapper.updateEntity(request, existing);
         existing.setClient(resolveOwnedClientOrNull(ownerId, request.clientId()));
-        return projectMapper.toResponse(projectRepository.save(existing));
+        Project saved = projectRepository.save(existing);
+        analyticsService.record(ownerId, AnalyticsEventType.PROJECT_UPDATED, null, saved.getId());
+        return projectMapper.toResponse(saved);
     }
 
     @Override

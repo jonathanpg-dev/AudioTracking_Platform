@@ -13,6 +13,7 @@ import com.AudioTracking.Platform.exception.ResourceNotFoundException;
 import com.AudioTracking.Platform.mapper.ProjectShareMapper;
 import com.AudioTracking.Platform.repository.ProjectShareRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.ProjectAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,7 @@ class ProjectShareServiceImplTest {
     @Mock private ProjectShareRepository projectShareRepository;
     @Mock private UserRepository userRepository;
     @Mock private ProjectAccessService projectAccessService;
+    @Mock private AnalyticsService analyticsService;
     @Mock private ProjectShareMapper projectShareMapper;
 
     private ProjectShareServiceImpl shareService;
@@ -49,7 +51,7 @@ class ProjectShareServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        shareService = new ProjectShareServiceImpl(projectShareRepository, userRepository, projectAccessService, projectShareMapper);
+        shareService = new ProjectShareServiceImpl(projectShareRepository, userRepository, projectAccessService, analyticsService, projectShareMapper);
     }
 
     @Test

@@ -14,4 +14,6 @@ public interface ClientRepository extends JpaRepository<Client, UUID> {
     // Scoping by id AND owner in one query: a wrong id and someone else's Client id produce the
     // exact same "not found" result — same pattern as every other owned entity in this app.
     Optional<Client> findByIdAndUserId(UUID id, UUID userId);
+
+    long countByUserId(UUID userId);
 }

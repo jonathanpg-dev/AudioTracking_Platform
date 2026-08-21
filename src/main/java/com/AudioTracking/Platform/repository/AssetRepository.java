@@ -20,6 +20,24 @@ public interface AssetRepository extends JpaRepository<Asset, UUID> {
 
     List<Asset> findAllByProjectId(UUID projectId);
 
+    long countByUserId(UUID userId);
+
+    // COALESCE handles the "user has zero assets, or every asset has a null fileSizeBytes"
+    // case -- SUM() over zero rows returns SQL NULL, not 0.
+    @Query("SELECT COALESCE(SUM(a.fileSizeBytes), 0) FROM Asset a WHERE a.user.id = :userId")
+    long sumFileSizeBytesByUserId(@Param("userId") UUID userId);
+
+    // One row per project with at least one asset, for "assets per project" -- a single
+    // aggregate query instead of looping findAllByProjectId per project (N+1).
+    @Query("SELECT a.project.id AS projectId, COUNT(a) AS assetCount FROM Asset a " +
+            "WHERE a.user.id = :userId AND a.project IS NOT NULL GROUP BY a.project.id")
+    List<ProjectAssetCount> countAssetsGroupedByProject(@Param("userId") UUID userId);
+
+    interface ProjectAssetCount {
+        UUID getProjectId();
+        long getAssetCount();
+    }
+
     // Backs GET /assets (with or without filters/pagination — a null filter param means "don't
     // filter on this", so calling with everything null reproduces the old unfiltered listing).
     //

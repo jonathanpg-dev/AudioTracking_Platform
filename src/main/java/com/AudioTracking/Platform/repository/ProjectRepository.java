@@ -16,4 +16,6 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     // Used when deleting a Client: every Project pointing at it must be unassigned (not deleted)
     // first, same pattern as AssetRepository.findAllByProjectId for Project deletion.
     List<Project> findAllByClientId(UUID clientId);
+
+    long countByUserId(UUID userId);
 }

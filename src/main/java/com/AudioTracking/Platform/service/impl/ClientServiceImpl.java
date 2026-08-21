@@ -3,6 +3,7 @@ package com.AudioTracking.Platform.service.impl;
 import com.AudioTracking.Platform.dto.client.ClientResponse;
 import com.AudioTracking.Platform.dto.client.CreateClientRequest;
 import com.AudioTracking.Platform.dto.client.UpdateClientRequest;
+import com.AudioTracking.Platform.entity.AnalyticsEventType;
 import com.AudioTracking.Platform.entity.Client;
 import com.AudioTracking.Platform.entity.Project;
 import com.AudioTracking.Platform.exception.ResourceNotFoundException;
@@ -10,6 +11,7 @@ import com.AudioTracking.Platform.mapper.ClientMapper;
 import com.AudioTracking.Platform.repository.ClientRepository;
 import com.AudioTracking.Platform.repository.ProjectRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.ClientService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,13 +25,16 @@ public class ClientServiceImpl implements ClientService {
     private final ClientRepository clientRepository;
     private final UserRepository userRepository;
     private final ProjectRepository projectRepository;
+    private final AnalyticsService analyticsService;
     private final ClientMapper clientMapper;
 
     public ClientServiceImpl(ClientRepository clientRepository, UserRepository userRepository,
-                              ProjectRepository projectRepository, ClientMapper clientMapper) {
+                              ProjectRepository projectRepository, AnalyticsService analyticsService,
+                              ClientMapper clientMapper) {
         this.clientRepository = clientRepository;
         this.userRepository = userRepository;
         this.projectRepository = projectRepository;
+        this.analyticsService = analyticsService;
         this.clientMapper = clientMapper;
     }
 
@@ -39,7 +44,9 @@ public class ClientServiceImpl implements ClientService {
         // getReferenceById avoids an extra SELECT: the caller is already an authenticated user
         // resolved from the JWT, so we only need their id to set the FK, not the full row.
         client.setUser(userRepository.getReferenceById(ownerId));
-        return clientMapper.toResponse(clientRepository.save(client));
+        Client saved = clientRepository.save(client);
+        analyticsService.record(ownerId, AnalyticsEventType.CLIENT_CREATED, null, null);
+        return clientMapper.toResponse(saved);
     }
 
     @Override

@@ -25,11 +25,19 @@ Phase 4
 See [docs/storage.md](docs/storage.md) for how audio file storage is configured and why.
 
 Phase 5
-- Tagging system
-- Search and filtering
+- Clients
+- Project collaboration and sharing (VIEW/EDIT permissions)
+
+See [docs/collaboration.md](docs/collaboration.md) for the authorization model behind sharing.
 
 Phase 6
-- Analytics dashboard
+- Analytics events and aggregated insights
+
+See [docs/analytics.md](docs/analytics.md) for the event-recording/aggregation split and why it's designed the way it is.
 
 Phase 7
-- Production deployment
+- Frontend / user interface
+
+Phase 8
+- Production deployment + CI/CD
+    

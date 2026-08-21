@@ -16,6 +16,7 @@ import com.AudioTracking.Platform.mapper.AssetMapper;
 import com.AudioTracking.Platform.repository.AssetRepository;
 import com.AudioTracking.Platform.repository.TagRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
+import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.ProjectAccessService;
 import com.AudioTracking.Platform.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +51,7 @@ class AssetServiceImplTest {
     @Mock private TagRepository tagRepository;
     @Mock private ProjectAccessService projectAccessService;
     @Mock private StorageService storageService;
+    @Mock private AnalyticsService analyticsService;
     @Mock private AssetMapper assetMapper;
 
     private AssetServiceImpl assetService;
@@ -63,7 +65,7 @@ class AssetServiceImplTest {
     @BeforeEach
     void setUp() {
         assetService = new AssetServiceImpl(assetRepository, userRepository, tagRepository,
-                projectAccessService, storageService, assetMapper, 15L);
+                projectAccessService, storageService, analyticsService, assetMapper, 15L);
     }
 
     private static User userWithId(UUID id) {
@@ -691,10 +693,25 @@ class AssetServiceImplTest {
         java.net.URI presigned = java.net.URI.create("https://r2.example.com/signed?sig=abc");
         when(storageService.generatePresignedDownloadUrl(eq("users/x/assets/y/z.wav"), any())).thenReturn(presigned);
 
-        var response = assetService.getFileAccessUrl(ownerId, assetId);
+        var response = assetService.getFileAccessUrl(ownerId, assetId, false);
 
         assertThat(response.url()).isEqualTo(presigned.toString());
         assertThat(response.expiresAt()).isAfter(java.time.Instant.now());
+        verify(analyticsService).record(ownerId, com.AudioTracking.Platform.entity.AnalyticsEventType.ASSET_PLAYED, assetId, null);
+    }
+
+    @Test
+    void getFileAccessUrl_download_recordsAssetDownloaded_notAssetPlayed() {
+        Asset asset = ownedAsset(assetId, ownerId);
+        asset.setStorageKey("users/x/assets/y/z.wav");
+        when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
+        when(storageService.generatePresignedDownloadUrl(eq("users/x/assets/y/z.wav"), any()))
+                .thenReturn(java.net.URI.create("https://r2.example.com/signed?sig=abc"));
+
+        assetService.getFileAccessUrl(ownerId, assetId, true);
+
+        verify(analyticsService).record(ownerId, com.AudioTracking.Platform.entity.AnalyticsEventType.ASSET_DOWNLOADED, assetId, null);
+        verify(analyticsService, never()).record(any(), eq(com.AudioTracking.Platform.entity.AnalyticsEventType.ASSET_PLAYED), any(), any());
     }
 
     @Test
@@ -709,7 +726,7 @@ class AssetServiceImplTest {
         java.net.URI presigned = java.net.URI.create("https://r2.example.com/signed?sig=abc");
         when(storageService.generatePresignedDownloadUrl(eq("users/x/assets/y/z.wav"), any())).thenReturn(presigned);
 
-        var response = assetService.getFileAccessUrl(otherUserId, assetId);
+        var response = assetService.getFileAccessUrl(otherUserId, assetId, false);
 
         assertThat(response.url()).isEqualTo(presigned.toString());
     }
@@ -719,7 +736,7 @@ class AssetServiceImplTest {
         Asset asset = ownedAsset(assetId, ownerId); // storageKey null
         when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
-        assertThatThrownBy(() -> assetService.getFileAccessUrl(ownerId, assetId))
+        assertThatThrownBy(() -> assetService.getFileAccessUrl(ownerId, assetId, false))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -728,7 +745,7 @@ class AssetServiceImplTest {
         Asset asset = ownedAsset(assetId, ownerId);
         when(assetRepository.findById(assetId)).thenReturn(Optional.of(asset));
 
-        assertThatThrownBy(() -> assetService.getFileAccessUrl(otherUserId, assetId))
+        assertThatThrownBy(() -> assetService.getFileAccessUrl(otherUserId, assetId, false))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 

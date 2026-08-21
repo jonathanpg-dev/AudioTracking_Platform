@@ -34,7 +34,11 @@ public interface AssetService {
     AssetResponse uploadFile(UUID ownerId, UUID assetId, MultipartFile file);
 
     // Generates a fresh short-lived presigned URL — never reads a stored one, because none exists.
-    FileAccessResponse getFileAccessUrl(UUID ownerId, UUID assetId);
+    // `download` is purely a caller-declared intent used for analytics (ASSET_PLAYED vs
+    // ASSET_DOWNLOADED): once this URL is handed back, the actual transfer happens directly
+    // against R2, so the backend has no way to observe what the client does with it. See
+    // docs/analytics.md.
+    FileAccessResponse getFileAccessUrl(UUID ownerId, UUID assetId, boolean download);
 
     AssetResponse deleteFile(UUID ownerId, UUID assetId);
 
