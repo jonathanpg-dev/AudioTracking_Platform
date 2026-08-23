@@ -7,7 +7,9 @@ import com.AudioTracking.Platform.dto.project.UpdateProjectRequest;
 import com.AudioTracking.Platform.security.CustomUserDetails;
 import com.AudioTracking.Platform.service.AssetService;
 import com.AudioTracking.Platform.service.ProjectService;
+import com.AudioTracking.Platform.util.SortParams;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -36,8 +38,24 @@ public class ProjectController {
     }
 
     @GetMapping
-    public ResponseEntity<List<ProjectResponse>> getProjects(@AuthenticationPrincipal CustomUserDetails currentUser) {
-        return ResponseEntity.ok(projectService.getProjects(currentUser.getId()));
+    public ResponseEntity<List<ProjectResponse>> getProjects(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                               @RequestParam(required = false) String sortBy,
+                                                               @RequestParam(required = false) String sortDir) {
+        Sort sort = SortParams.resolve(sortBy, sortDir);
+        return ResponseEntity.ok(projectService.getProjects(currentUser.getId(), sort));
+    }
+
+    // Mapped before "/{id}" registration for the same reason UserController's "/me" is -- Spring
+    // resolves the literal "as-client" segment ahead of the "{id}" variable pattern regardless of
+    // declaration order, this is just for readability. Every Project here has myRole CLIENT;
+    // deliberately a separate list from GET / above, not merged into it -- client access and
+    // owner/collaborator access are different relationships (see docs/collaboration.md).
+    @GetMapping("/as-client")
+    public ResponseEntity<List<ProjectResponse>> getProjectsAsClient(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                                        @RequestParam(required = false) String sortBy,
+                                                                        @RequestParam(required = false) String sortDir) {
+        Sort sort = SortParams.resolve(sortBy, sortDir);
+        return ResponseEntity.ok(projectService.getProjectsAsClient(currentUser.getId(), sort));
     }
 
     @GetMapping("/{id}")

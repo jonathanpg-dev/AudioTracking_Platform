@@ -12,6 +12,7 @@ import com.AudioTracking.Platform.repository.CollectionRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
 import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.CollectionService;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -46,8 +47,8 @@ public class CollectionServiceImpl implements CollectionService {
     }
 
     @Override
-    public List<CollectionResponse> getCollections(UUID ownerId) {
-        return collectionMapper.toResponseList(collectionRepository.findAllByUserIdOrderByCreatedAtDesc(ownerId));
+    public List<CollectionResponse> getCollections(UUID ownerId, Sort sort) {
+        return collectionMapper.toResponseList(collectionRepository.findAllByUserId(ownerId, sort));
     }
 
     @Override

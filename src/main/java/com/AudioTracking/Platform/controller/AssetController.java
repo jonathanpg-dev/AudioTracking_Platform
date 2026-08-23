@@ -5,9 +5,11 @@ import com.AudioTracking.Platform.dto.asset.AssetResponse;
 import com.AudioTracking.Platform.dto.asset.CreateAssetRequest;
 import com.AudioTracking.Platform.dto.asset.FileAccessResponse;
 import com.AudioTracking.Platform.dto.asset.UpdateAssetRequest;
+import com.AudioTracking.Platform.dto.asset.UpdateClientNotesRequest;
 import com.AudioTracking.Platform.entity.AssetType;
 import com.AudioTracking.Platform.security.CustomUserDetails;
 import com.AudioTracking.Platform.service.AssetService;
+import com.AudioTracking.Platform.util.SortParams;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -42,14 +44,20 @@ public class AssetController {
     public ResponseEntity<List<AssetResponse>> getAssets(@AuthenticationPrincipal CustomUserDetails currentUser,
                                                            @RequestParam(required = false) AssetType assetType,
                                                            @RequestParam(required = false) UUID projectId,
-                                                           @RequestParam(required = false) UUID tagId,
+                                                           @RequestParam(required = false) List<UUID> tagIds,
                                                            @RequestParam(required = false) Integer minBpm,
                                                            @RequestParam(required = false) Integer maxBpm,
                                                            @RequestParam(required = false) String musicalKey,
+                                                           @RequestParam(required = false) String audioFormat,
+                                                           @RequestParam(required = false) Integer minDurationSeconds,
+                                                           @RequestParam(required = false) Integer maxDurationSeconds,
+                                                           @RequestParam(required = false) String sortBy,
+                                                           @RequestParam(required = false) String sortDir,
                                                            @RequestParam(required = false) Integer page,
                                                            @RequestParam(required = false) Integer size) {
-        AssetFilter filter = new AssetFilter(assetType, projectId, tagId, minBpm, maxBpm, musicalKey);
-        Sort sort = Sort.by("createdAt").descending();
+        AssetFilter filter = new AssetFilter(assetType, projectId, tagIds, minBpm, maxBpm, musicalKey,
+                audioFormat, minDurationSeconds, maxDurationSeconds);
+        Sort sort = SortParams.resolve(sortBy, sortDir);
         Pageable pageable = (page != null && size != null) ? PageRequest.of(page, size, sort) : Pageable.unpaged(sort);
         return ResponseEntity.ok(assetService.getAssets(currentUser.getId(), filter, pageable));
     }
@@ -112,5 +120,15 @@ public class AssetController {
     public ResponseEntity<AssetResponse> deleteFile(@AuthenticationPrincipal CustomUserDetails currentUser,
                                                      @PathVariable UUID id) {
         return ResponseEntity.ok(assetService.deleteFile(currentUser.getId(), id));
+    }
+
+    // Separate from PUT /{id} above on purpose: that endpoint is full-replace and EDIT-only
+    // (owner or EDIT collaborator); this one is writable only by the asset's Project's assigned
+    // client (ProjectRole.CLIENT) -- see AssetService#updateClientNotes.
+    @PutMapping("/{id}/client-notes")
+    public ResponseEntity<AssetResponse> updateClientNotes(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                             @PathVariable UUID id,
+                                                             @Valid @RequestBody UpdateClientNotesRequest request) {
+        return ResponseEntity.ok(assetService.updateClientNotes(currentUser.getId(), id, request.clientNotes()));
     }
 }

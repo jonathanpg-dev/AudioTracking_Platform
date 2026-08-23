@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+/* Space Grotesk (used only for `font-display` below -- wordmark, page/card headings; the rest of
+   the UI stays on the default sans stack) is loaded via a <link> in index.html, not an @import
+   here: the tailwindcss import above gets expanded into real CSS rules before this file reaches
+   the minifier, which makes any later `@import` structurally invalid CSS at that point. */
+
+/* Five selectable themes (see features/theme/) instead of one fixed palette. Every color is a
+   CSS custom property token, so Tailwind generates the matching bg, text, and border utilities
+   from it -- components never hardcode a raw color, they only reference tokens, which is what
+   lets the same markup repaint completely when the active theme changes.
+
+   Token roles, consistent across all five themes:
+     surface        - card/panel background
+     surface-muted  - page background, one step back from surface
+     surface-sunken - a further recessed background (code blocks, the login brand panel, etc.)
+     border          - default border
+     ink / ink-muted / ink-subtle - text, in decreasing emphasis
+     accent / accent-hover / accent-soft - the primary interactive color
+     accent-2        - secondary accent, used sparingly (gradients, waveform accents)
+     on-accent       - text color for content sitting on a solid accent background (a button
+                       label, an avatar initial) -- white in every theme except Biophilic
+                       Cyberpunk, where its accent is light/saturated enough that white text
+                       reads as harsh; that theme swaps it for a dark forest color instead
+     danger / success / warning (plus -soft variants) - status colors, kept legible on each bg */
+@theme {
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+
+  --color-surface: #ffffff;
+  --color-surface-muted: #f7f5fb;
+  --color-surface-sunken: #efebf7;
+  --color-border: #e5e0f0;
+
+  --color-ink: #1a1523;
+  --color-ink-muted: #665f78;
+  --color-ink-subtle: #948dab;
+
+  --color-accent: #7c3aed;
+  --color-accent-hover: #6d28d9;
+  --color-accent-soft: #f1eafe;
+  --color-accent-2: #0d9488;
+  --color-on-accent: #ffffff;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-danger-soft: #fef2f2;
+
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-surface-muted);
+  color: var(--color-ink);
+}
+
+/* Theme overrides. The base @theme block above is the "light" theme -- it also doubles as the
+   no-JS fallback, since the real default ("biophilic", see DEFAULT_THEME in features/theme/
+   themes.ts) is applied via [data-theme] on <html>, set synchronously by the inline script in
+   index.html (to avoid a flash of the wrong theme on first paint) and kept in sync afterwards by
+   ThemeProvider. Every component keeps using the same bg-surface/text-ink/etc. classes -- only
+   the token values change per block. */
+
+[data-theme="biophilic"] {
+  /* Biophilic Cyberpunk (default) -- a dark forest canopy at night, lit by bioluminescent
+     fungus: near-black with a deep green shadow cast, glowing green primary accent, mycelium-gold
+     secondary accent. The accent is a muted emerald rather than a highlighter-bright neon --
+     full-saturation neon green with white text was genuinely hard to look at, so this is toned
+     down, and --color-on-accent below switches button/avatar text to a dark forest color instead
+     of white (same idea as a light-on-dark brand button using dark text for comfort). See the
+     glow rules further down for the extra "bioluminescent" touches (hover glow on primary
+     actions, glowing focus ring) unique to this theme. */
+  color-scheme: dark;
+  --color-surface: #0d1410;
+  --color-surface-muted: #080c09;
+  --color-surface-sunken: #050705;
+  --color-border: #1f2e22;
+
+  --color-ink: #e6f3e9;
+  --color-ink-muted: #9bb3a1;
+  --color-ink-subtle: #62795f;
+
+  --color-accent: #34c98a;
+  --color-accent-hover: #4ddba0;
+  --color-accent-soft: #103322;
+  --color-accent-2: #d9b458;
+  --color-on-accent: var(--color-surface-sunken);
+
+  --color-danger: #ff6b6b;
+  --color-danger-hover: #ff8f8f;
+  --color-danger-soft: #331515;
+
+  --color-success: #7ee787;
+  --color-warning: #f0b429;
+}
+
+[data-theme="dark"] {
+  /* Studio Dark -- a mixing-console feel: near-black with a violet cast, electric accent. */
+  color-scheme: dark;
+  --color-surface: #17141f;
+  --color-surface-muted: #100e16;
+  --color-surface-sunken: #0b0a10;
+  --color-border: #2c273a;
+
+  --color-ink: #f1eef8;
+  --color-ink-muted: #a89fc0;
+  --color-ink-subtle: #746b8c;
+
+  --color-accent: #a78bfa;
+  --color-accent-hover: #c4b5fd;
+  --color-accent-soft: #2e2748;
+  --color-accent-2: #22d3ee;
+
+  --color-danger: #f87171;
+  --color-danger-hover: #fca5a5;
+  --color-danger-soft: #3a1d24;
+
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+}
+
+[data-theme="analog"] {
+  /* Warm Analog -- tape/vinyl/vintage-hardware feel: warm near-black, amber accent. */
+  color-scheme: dark;
+  --color-surface: #1e1811;
+  --color-surface-muted: #17120d;
+  --color-surface-sunken: #100c08;
+  --color-border: #382c1f;
+
+  --color-ink: #f5ece0;
+  --color-ink-muted: #baa78c;
+  --color-ink-subtle: #8a7860;
+
+  --color-accent: #f0a04b;
+  --color-accent-hover: #f6b56a;
+  --color-accent-soft: #3a2814;
+  --color-accent-2: #e0574c;
+
+  --color-danger: #f87171;
+  --color-danger-hover: #fca5a5;
+  --color-danger-soft: #3a1d1a;
+
+  --color-success: #86d68a;
+  --color-warning: #fbbf24;
+}
+
+[data-theme="gradient"] {
+  /* Bold Gradient -- vivid modern SaaS feel: deep indigo base, pink/violet brand gradient
+     (see --gradient-brand below) used on hero panels and a couple of accent buttons. */
+  color-scheme: dark;
+  --color-surface: #171130;
+  --color-surface-muted: #100b24;
+  --color-surface-sunken: #0b0819;
+  --color-border: #352a54;
+
+  --color-ink: #f5f1fc;
+  --color-ink-muted: #b8a9dd;
+  --color-ink-subtle: #8677ab;
+
+  --color-accent: #ec4899;
+  --color-accent-hover: #f472b6;
+  --color-accent-soft: #3a1e3f;
+  --color-accent-2: #8b5cf6;
+
+  --color-danger: #f87171;
+  --color-danger-hover: #fca5a5;
+  --color-danger-soft: #3a1d24;
+
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+}
+
+/* A brand gradient built from the two accent tokens -- resolves to something different (and
+   subtler) per theme, since accent/accent-2 change. Applied via the `.brand-gradient` utility
+   class rather than an arbitrary Tailwind value, since it's used in a handful of specific spots
+   (login brand panel, a couple of CTAs) rather than being a general-purpose utility. */
+:root {
+  --gradient-brand: linear-gradient(135deg, var(--color-accent-2), var(--color-accent));
+}
+
+.brand-gradient {
+  background-image: var(--gradient-brand);
+}
+
+/* Visible focus ring everywhere, including on custom components -- accessibility requirement. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Bioluminescent touches, scoped to the Biophilic Cyberpunk theme only -- the other four themes
+   stay flat/matte. A soft neon-green glow on hover for anything using the primary accent
+   background (Button's primary variant, mainly), and the same glow layered onto the focus ring. */
+[data-theme="biophilic"] .bg-accent {
+  transition-property: background-color, box-shadow;
+  box-shadow: 0 0 0 0 transparent;
+}
+
+[data-theme="biophilic"] .bg-accent:hover {
+  box-shadow: 0 0 18px -2px var(--color-accent);
+}
+
+[data-theme="biophilic"]:focus-visible,
+[data-theme="biophilic"] :focus-visible {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+/* Repaint on theme switch, and on this theme's own hover glow above, at a quick, snappy pace --
+   fast enough to feel responsive rather than sluggish, not so fast it's a hard cut. Scoped to
+   layout containers (plus the opt-in .theme-transition class) rather than `*`, so it doesn't
+   fight with existing hover/transition utilities on buttons, links, etc. */
+body,
+aside,
+header,
+.theme-transition {
+  transition:
+    background-color 0.13s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.13s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.13s cubic-bezier(0.22, 1, 0.36, 1);
+}

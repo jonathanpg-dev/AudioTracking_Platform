@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -31,6 +32,13 @@ public class Collection {
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
+
+    // Added for "order by date modified" search/sort support -- renaming a Collection is the
+    // only mutation this entity has today (addAsset/removeAsset touch collection_assets, a
+    // separate join table, not this row), so this is what "modified" means for a Collection.
+    @UpdateTimestamp
+    @Column(nullable = false)
+    private Instant updatedAt;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)

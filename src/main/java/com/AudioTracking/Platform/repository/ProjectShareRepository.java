@@ -14,6 +14,11 @@ public interface ProjectShareRepository extends JpaRepository<ProjectShare, UUID
 
     List<ProjectShare> findAllByProjectIdOrderByCreatedAtAsc(UUID projectId);
 
+    // Every Project shared *with* this user, across all Projects -- backs the batch role lookup
+    // for GET /projects now that it includes shared Projects (see ProjectAccessService#getRoles).
+    // One query instead of one findByProjectIdAndUserId per Project in the list.
+    List<ProjectShare> findAllByUserId(UUID userId);
+
     // The core access-check query: does this user have ANY share on this project, and if so
     // what permission. Backs every ProjectAccessService decision.
     Optional<ProjectShare> findByProjectIdAndUserId(UUID projectId, UUID userId);

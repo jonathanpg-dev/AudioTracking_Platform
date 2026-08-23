@@ -1,7 +1,10 @@
 package com.AudioTracking.Platform.service;
 
 import com.AudioTracking.Platform.entity.Project;
+import com.AudioTracking.Platform.entity.ProjectRole;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 // Single, central authority for "can this User do X to this Project" -- every other service
@@ -24,4 +27,16 @@ public interface ProjectAccessService {
 
     // Owner only. Every share-management and Project-administrative operation goes through this.
     Project requireOwnerAccess(UUID userId, UUID projectId);
+
+    // For when a caller needs to know WHICH relationship applies, not just whether one grants
+    // enough access -- e.g. ProjectResponse.myRole, so the frontend can render permission-aware
+    // UI without guessing. Takes an already-loaded Project (the caller already fetched one via
+    // one of the requireXAccess methods above) to avoid a redundant lookup.
+    ProjectRole getRole(UUID userId, Project project);
+
+    // Batch counterpart to getRole -- resolves the caller's role for each of a list of Projects
+    // they're already known to have SOME access to (e.g. from
+    // ProjectRepository#findAllAccessibleByUserId). One query for all the caller's shares instead
+    // of one getRole() round-trip per Project in the list.
+    Map<UUID, ProjectRole> getRoles(UUID userId, List<Project> projects);
 }

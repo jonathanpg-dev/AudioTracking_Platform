@@ -8,9 +8,11 @@ import com.AudioTracking.Platform.dto.asset.UpdateAssetRequest;
 import org.springframework.data.domain.Pageable;
 import com.AudioTracking.Platform.entity.AnalyticsEventType;
 import com.AudioTracking.Platform.entity.Asset;
+import com.AudioTracking.Platform.entity.Client;
 import com.AudioTracking.Platform.entity.Collection;
 import com.AudioTracking.Platform.entity.Project;
 import com.AudioTracking.Platform.entity.Tag;
+import com.AudioTracking.Platform.exception.InsufficientPermissionException;
 import com.AudioTracking.Platform.exception.InvalidFileException;
 import com.AudioTracking.Platform.exception.ResourceNotFoundException;
 import com.AudioTracking.Platform.exception.StorageException;
@@ -83,14 +85,29 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     public List<AssetResponse> getAssets(UUID ownerId, AssetFilter filter, Pageable pageable) {
+        // Deduplicated before counting -- tagCount has to equal the number of *distinct* tags an
+        // asset must carry. Without dedup, a client sending the same tag id twice (e.g. a replayed
+        // query param) would push tagCount above what any asset could ever match, silently
+        // returning zero results instead of the same result a single copy of that id would give.
+        //
+        // A blank tagIds list is treated identically to "not provided" -- see
+        // AssetRepository#search for why null (not an empty List) is what the query expects.
+        List<UUID> tagIds = (filter.tagIds() == null || filter.tagIds().isEmpty())
+                ? null
+                : filter.tagIds().stream().distinct().toList();
+        long tagCount = tagIds == null ? 0 : tagIds.size();
         return assetMapper.toResponseList(assetRepository.search(
                 ownerId,
                 filter.assetType(),
                 filter.projectId(),
-                filter.tagId(),
+                tagIds,
+                tagCount,
                 filter.minBpm(),
                 filter.maxBpm(),
                 filter.musicalKey(),
+                filter.audioFormat(),
+                filter.minDurationSeconds(),
+                filter.maxDurationSeconds(),
                 pageable).getContent());
     }
 
@@ -251,6 +268,31 @@ public class AssetServiceImpl implements AssetService {
         // Owner, VIEW, or EDIT collaborator can all browse a Project's assets.
         projectAccessService.requireViewAccess(requesterId, projectId);
         return assetMapper.toResponseList(assetRepository.findAllByProjectId(projectId));
+    }
+
+    @Override
+    public AssetResponse updateClientNotes(UUID requesterId, UUID assetId, String clientNotes) {
+        Asset asset = assetRepository.findById(assetId)
+                .orElseThrow(() -> new ResourceNotFoundException("Asset with id '" + assetId + "' not found"));
+        if (asset.getProject() == null) {
+            // Nothing for a client to be the client OF here -- same 404 an unrelated user gets.
+            throw new ResourceNotFoundException("Asset with id '" + assetId + "' not found");
+        }
+
+        // Confirms the requester has at least VIEW-equivalent access to this Asset's Project first
+        // (owner, collaborator, or client) -- reuses the exact same "no relationship at all -> 404"
+        // boundary as everything else, then narrows to specifically "are you the linked client"
+        // below, which is a strictly narrower grant than VIEW itself.
+        projectAccessService.requireViewAccess(requesterId, asset.getProject().getId());
+
+        Client client = asset.getProject().getClient();
+        if (client == null || client.getLinkedUser() == null || !client.getLinkedUser().getId().equals(requesterId)) {
+            // They already know this Asset exists (VIEW access just succeeded above) -> 403.
+            throw new InsufficientPermissionException("Only this project's client can edit client notes");
+        }
+
+        asset.setClientNotes(clientNotes);
+        return assetMapper.toResponse(assetRepository.save(asset));
     }
 
     // Snapshot helper for analytics events: null-safe extraction of an Asset's current project id.

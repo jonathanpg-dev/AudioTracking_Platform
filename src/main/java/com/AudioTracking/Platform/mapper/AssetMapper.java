@@ -70,7 +70,8 @@ public class AssetMapper {
                 tags,
                 project == null ? null : project.getId(),
                 project == null ? null : project.getName(),
-                asset.getStorageKey() != null);
+                asset.getStorageKey() != null,
+                asset.getClientNotes());
     }
 
     public List<AssetResponse> toResponseList(List<Asset> assets) {

@@ -29,6 +29,15 @@ public class User {
     @Column(unique = true)
     private String googleId;
 
+    // True once a client-only account has explicitly chosen "Become a creator too" -- see
+    // UserService#unlockCreatorMode. Independent of actually owning anything yet: this is what
+    // lets the full producer UI unlock immediately on request, rather than only ever flipping
+    // automatically the moment the account creates its first Project (see
+    // CurrentUserResponse#isClientOnly for that automatic path, which still also applies). One-way
+    // -- there's no "go back to the simplified view" action.
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean creatorModeUnlocked = false;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

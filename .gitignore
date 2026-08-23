@@ -36,4 +36,10 @@ build/
 .env
 .env.*
 !.env.example
+# frontend/.env.development and frontend/.env.test are deliberately committed -- neither holds a
+# secret (a localhost URL and a public Google OAuth Client ID/placeholder; see docs/frontend.md
+# and each file's own header comment). Only frontend/.env.production (a real deploy's values,
+# never created by this repo) should stay ignored.
+!frontend/.env.development
+!frontend/.env.test
 application-local.properties

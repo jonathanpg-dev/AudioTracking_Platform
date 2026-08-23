@@ -47,4 +47,9 @@ public interface AssetService {
     // caller personally owns and structurally can't serve a collaborator browsing someone else's
     // shared project. See docs/collaboration.md.
     List<AssetResponse> getProjectAssets(UUID requesterId, UUID projectId);
+
+    // Writable only by the Asset's Project's assigned client (ProjectRole.CLIENT) -- not the
+    // owner, not an EDIT collaborator, not even via the general updateAsset above. See
+    // docs/collaboration.md and Asset.clientNotes.
+    AssetResponse updateClientNotes(UUID requesterId, UUID assetId, String clientNotes);
 }

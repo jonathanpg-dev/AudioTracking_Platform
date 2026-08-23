@@ -25,7 +25,7 @@ public class CollectionMapper {
                 .sorted(Comparator.naturalOrder())
                 .toList();
 
-        return new CollectionResponse(collection.getId(), collection.getName(), collection.getCreatedAt(), assetIds);
+        return new CollectionResponse(collection.getId(), collection.getName(), collection.getCreatedAt(), collection.getUpdatedAt(), assetIds);
     }
 
     public List<CollectionResponse> toResponseList(List<Collection> collections) {

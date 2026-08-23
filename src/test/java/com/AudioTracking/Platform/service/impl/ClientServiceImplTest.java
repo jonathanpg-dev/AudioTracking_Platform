@@ -11,6 +11,7 @@ import com.AudioTracking.Platform.repository.ClientRepository;
 import com.AudioTracking.Platform.repository.ProjectRepository;
 import com.AudioTracking.Platform.repository.UserRepository;
 import com.AudioTracking.Platform.service.AnalyticsService;
+import com.AudioTracking.Platform.util.UsernameGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +39,7 @@ class ClientServiceImplTest {
     @Mock private ProjectRepository projectRepository;
     @Mock private AnalyticsService analyticsService;
     @Mock private ClientMapper clientMapper;
+    @Mock private UsernameGenerator usernameGenerator;
 
     private ClientServiceImpl clientService;
 
@@ -47,7 +49,8 @@ class ClientServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        clientService = new ClientServiceImpl(clientRepository, userRepository, projectRepository, analyticsService, clientMapper);
+        clientService = new ClientServiceImpl(clientRepository, userRepository, projectRepository, analyticsService,
+                clientMapper, usernameGenerator);
     }
 
     @Test
@@ -72,6 +75,67 @@ class ClientServiceImplTest {
         ArgumentCaptor<Client> captor = ArgumentCaptor.forClass(Client.class);
         verify(clientRepository).save(captor.capture());
         assertThat(captor.getValue().getUser()).isSameAs(ownerRef);
+    }
+
+    @Test
+    void createClient_blankEmail_leavesLinkedUserNull_neverQueriesUserRepository() {
+        CreateClientRequest request = new CreateClientRequest("John Smith", null, null, null);
+        when(clientMapper.toEntity(request)).thenReturn(new Client());
+        when(userRepository.getReferenceById(ownerId)).thenReturn(new User());
+        when(clientRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clientMapper.toResponse(any())).thenReturn(mock(ClientResponse.class));
+
+        clientService.createClient(ownerId, request);
+
+        ArgumentCaptor<Client> captor = ArgumentCaptor.forClass(Client.class);
+        verify(clientRepository).save(captor.capture());
+        assertThat(captor.getValue().getLinkedUser()).isNull();
+        verify(userRepository, never()).findByEmail(any());
+    }
+
+    @Test
+    void createClient_emailMatchesAnExistingUser_linksToThatAccount_neverCreatesADuplicate() {
+        // The "a regular User is also someone's Client" case -- resolveLinkedUserOrNull must
+        // link to the existing account as-is, never provisioning a second one for the same email.
+        CreateClientRequest request = new CreateClientRequest("Jane Doe", "jane@example.com", null, null);
+        when(clientMapper.toEntity(request)).thenReturn(new Client());
+        when(userRepository.getReferenceById(ownerId)).thenReturn(new User());
+        User existingUser = new User();
+        existingUser.setId(UUID.randomUUID());
+        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.of(existingUser));
+        when(clientRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clientMapper.toResponse(any())).thenReturn(mock(ClientResponse.class));
+
+        clientService.createClient(ownerId, request);
+
+        ArgumentCaptor<Client> captor = ArgumentCaptor.forClass(Client.class);
+        verify(clientRepository).save(captor.capture());
+        assertThat(captor.getValue().getLinkedUser()).isSameAs(existingUser);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void createClient_emailMatchesNoUser_provisionsAGoogleLoginOnlyAccount() {
+        CreateClientRequest request = new CreateClientRequest("New Client", "newclient@example.com", null, null);
+        when(clientMapper.toEntity(request)).thenReturn(new Client());
+        when(userRepository.getReferenceById(ownerId)).thenReturn(new User());
+        when(userRepository.findByEmail("newclient@example.com")).thenReturn(Optional.empty());
+        when(usernameGenerator.generateUniqueUsername("newclient@example.com")).thenReturn("newclient");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clientRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clientMapper.toResponse(any())).thenReturn(mock(ClientResponse.class));
+
+        clientService.createClient(ownerId, request);
+
+        ArgumentCaptor<Client> captor = ArgumentCaptor.forClass(Client.class);
+        verify(clientRepository).save(captor.capture());
+        User linkedUser = captor.getValue().getLinkedUser();
+        assertThat(linkedUser).isNotNull();
+        assertThat(linkedUser.getUsername()).isEqualTo("newclient");
+        assertThat(linkedUser.getEmail()).isEqualTo("newclient@example.com");
+        // Google-login-only, same shape a fresh Google signup produces -- never a password.
+        assertThat(linkedUser.getPasswordHash()).isNull();
+        assertThat(linkedUser.getGoogleId()).isNull();
     }
 
     @Test

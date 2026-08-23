@@ -53,6 +53,13 @@ public class Asset {
     @Column(length = 500)
     private String storageKey;
 
+    // Feedback from this Asset's Project's client -- deliberately separate from `description`
+    // above (the owner/collaborators' own notes). Writable only by the Project's linked client
+    // (see AssetServiceImpl#updateClientNotes), readable by anyone with view+ access to the
+    // Asset, same as every other field here. Null means no client feedback yet, not "no client".
+    @Column(length = 2000)
+    private String clientNotes;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

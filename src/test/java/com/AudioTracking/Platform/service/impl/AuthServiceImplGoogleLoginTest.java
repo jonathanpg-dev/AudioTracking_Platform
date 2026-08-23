@@ -7,6 +7,7 @@ import com.AudioTracking.Platform.exception.InvalidGoogleTokenException;
 import com.AudioTracking.Platform.mapper.UserMapper;
 import com.AudioTracking.Platform.repository.UserRepository;
 import com.AudioTracking.Platform.security.JwtService;
+import com.AudioTracking.Platform.util.UsernameGenerator;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,8 +47,10 @@ class AuthServiceImplGoogleLoginTest {
 
     @BeforeEach
     void setUp() {
+        // Real (not mocked) UsernameGenerator wrapping the same mocked userRepository -- its
+        // existsByUsername stubbing already drives the collision-handling tests below unchanged.
         authService = new AuthServiceImpl(userRepository, userMapper, passwordEncoder,
-                authenticationManager, jwtService, googleIdTokenVerifier);
+                authenticationManager, jwtService, googleIdTokenVerifier, new UsernameGenerator(userRepository));
     }
 
     private GoogleIdToken tokenWith(String subject, String email, Boolean emailVerified) throws Exception {

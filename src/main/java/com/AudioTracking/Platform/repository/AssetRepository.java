@@ -8,9 +8,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.List;
 
 public interface AssetRepository extends JpaRepository<Asset, UUID> {
 
@@ -38,46 +38,62 @@ public interface AssetRepository extends JpaRepository<Asset, UUID> {
         long getAssetCount();
     }
 
-    // Backs GET /assets (with or without filters/pagination — a null filter param means "don't
-    // filter on this", so calling with everything null reproduces the old unfiltered listing).
+    // Backs GET /assets (with or without filters/pagination/sort — a null filter param means
+    // "don't filter on this", so calling with everything null reproduces the old unfiltered
+    // listing).
     //
-    // LEFT JOIN (not the implicit inner join a plain "a.project.id"/"a.tags" path would use) is
-    // required on both associations: a.project is nullable, and without LEFT JOIN, assets with
-    // no project would silently vanish even when projectId isn't being filtered on at all. Same
-    // reasoning for tags. SELECT DISTINCT is required because the tags join is multi-valued —
-    // without it, an asset with 3 tags would appear 3 times in a paginated result.
+    // LEFT JOIN (not the implicit inner join a plain "a.project.id" path would use) is required
+    // on the project association: a.project is nullable, and without LEFT JOIN, assets with no
+    // project would silently vanish even when projectId isn't being filtered on at all.
+    //
+    // Tag matching is AND, not OR (an asset must carry every tag in :tagIds, not just one) and is
+    // expressed as a correlated subquery rather than a join: `(SELECT COUNT(t) FROM a.tags t
+    // WHERE t.id IN :tagIds) = :tagCount` is true only when every id in :tagIds was found among
+    // this asset's tags. That also means, unlike the old single-tagId join, there's no multi-
+    // valued join left in this query — so no fan-out, and no SELECT DISTINCT needed. tagIds is
+    // passed as null (never an empty list) when the filter is unused: a null bind parameter makes
+    // `t.id IN :tagIds` valid-but-false SQL, whereas binding an empty Java List to an IN clause is
+    // provider-dependent and best avoided. See AssetServiceImpl#getAssets.
     @Query(
             value = """
-                    SELECT DISTINCT a FROM Asset a
+                    SELECT a FROM Asset a
                     LEFT JOIN a.project p
-                    LEFT JOIN a.tags t
                     WHERE a.user.id = :userId
                       AND (:assetType IS NULL OR a.assetType = :assetType)
                       AND (:projectId IS NULL OR p.id = :projectId)
-                      AND (:tagId IS NULL OR t.id = :tagId)
                       AND (:minBpm IS NULL OR a.bpm >= :minBpm)
                       AND (:maxBpm IS NULL OR a.bpm <= :maxBpm)
-                      AND (:musicalKey IS NULL OR a.musicalKey = :musicalKey)
+                      AND (:musicalKey IS NULL OR LOWER(a.musicalKey) = LOWER(CAST(:musicalKey AS string)))
+                      AND (:audioFormat IS NULL OR a.audioFormat = :audioFormat)
+                      AND (:minDurationSeconds IS NULL OR a.durationSeconds >= :minDurationSeconds)
+                      AND (:maxDurationSeconds IS NULL OR a.durationSeconds <= :maxDurationSeconds)
+                      AND (:tagIds IS NULL OR (SELECT COUNT(t) FROM a.tags t WHERE t.id IN :tagIds) = :tagCount)
                     """,
             countQuery = """
-                    SELECT COUNT(DISTINCT a) FROM Asset a
+                    SELECT COUNT(a) FROM Asset a
                     LEFT JOIN a.project p
-                    LEFT JOIN a.tags t
                     WHERE a.user.id = :userId
                       AND (:assetType IS NULL OR a.assetType = :assetType)
                       AND (:projectId IS NULL OR p.id = :projectId)
-                      AND (:tagId IS NULL OR t.id = :tagId)
                       AND (:minBpm IS NULL OR a.bpm >= :minBpm)
                       AND (:maxBpm IS NULL OR a.bpm <= :maxBpm)
-                      AND (:musicalKey IS NULL OR a.musicalKey = :musicalKey)
+                      AND (:musicalKey IS NULL OR LOWER(a.musicalKey) = LOWER(CAST(:musicalKey AS string)))
+                      AND (:audioFormat IS NULL OR a.audioFormat = :audioFormat)
+                      AND (:minDurationSeconds IS NULL OR a.durationSeconds >= :minDurationSeconds)
+                      AND (:maxDurationSeconds IS NULL OR a.durationSeconds <= :maxDurationSeconds)
+                      AND (:tagIds IS NULL OR (SELECT COUNT(t) FROM a.tags t WHERE t.id IN :tagIds) = :tagCount)
                     """
     )
     Page<Asset> search(@Param("userId") UUID userId,
                         @Param("assetType") AssetType assetType,
                         @Param("projectId") UUID projectId,
-                        @Param("tagId") UUID tagId,
+                        @Param("tagIds") List<UUID> tagIds,
+                        @Param("tagCount") long tagCount,
                         @Param("minBpm") Integer minBpm,
                         @Param("maxBpm") Integer maxBpm,
                         @Param("musicalKey") String musicalKey,
+                        @Param("audioFormat") String audioFormat,
+                        @Param("minDurationSeconds") Integer minDurationSeconds,
+                        @Param("maxDurationSeconds") Integer maxDurationSeconds,
                         Pageable pageable);
 }

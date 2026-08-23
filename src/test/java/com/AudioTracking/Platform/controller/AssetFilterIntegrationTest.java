@@ -25,12 +25,18 @@ class AssetFilterIntegrationTest extends BaseIntegrationTest {
     }
 
     private String createAsset(String title, String assetType, Integer bpm, String musicalKey) throws Exception {
+        return createAsset(title, assetType, bpm, musicalKey, null, null);
+    }
+
+    private String createAsset(String title, String assetType, Integer bpm, String musicalKey,
+                                Integer durationSeconds, String audioFormat) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/assets")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"title":"%s","assetType":"%s","bpm":%s,"musicalKey":"%s"}
-                                """.formatted(title, assetType, bpm, musicalKey)))
+                                {"title":"%s","assetType":"%s","bpm":%s,"musicalKey":"%s","durationSeconds":%s,"audioFormat":%s}
+                                """.formatted(title, assetType, bpm, musicalKey, durationSeconds,
+                                audioFormat == null ? null : "\"" + audioFormat + "\"")))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
@@ -111,17 +117,17 @@ class AssetFilterIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(1)));
     }
 
-    // --- tag filter — the LEFT JOIN + DISTINCT correctness case ---
+    // --- tag filter — AND semantics: an asset must carry every listed tag, not just one ---
 
     @Test
-    void filterByTagId_returnsOnlyAssetsWithThatTag() throws Exception {
+    void filterBySingleTagId_returnsOnlyAssetsWithThatTag() throws Exception {
         String tagId = createTag("trap");
         String taggedAssetId = createAsset("Tagged", "BEAT", null, null);
         mockMvc.perform(post("/api/v1/assets/" + taggedAssetId + "/tags/" + tagId).header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
         createAsset("Untagged", "BEAT", null, null);
 
-        mockMvc.perform(get("/api/v1/assets?tagId=" + tagId).header("Authorization", "Bearer " + token))
+        mockMvc.perform(get("/api/v1/assets?tagIds=" + tagId).header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].title").value("Tagged"));
@@ -138,8 +144,9 @@ class AssetFilterIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void assetWithMultipleTags_appearsExactlyOnce_notOncePerTag() throws Exception {
-        // This is the DISTINCT case: the tags join is multi-valued, so without SELECT DISTINCT
-        // this asset would appear 3 times (once per tag row) instead of once.
+        // Guards against a fan-out regression: tag matching is a correlated subquery (see
+        // AssetRepository#search), not a join, specifically so a multi-tagged asset can't appear
+        // more than once in the result.
         String assetId = createAsset("Multi-tagged", "BEAT", null, null);
         for (String tagName : new String[]{"trap", "dark", "cinematic"}) {
             String tagId = createTag(tagName);
@@ -150,6 +157,119 @@ class AssetFilterIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/v1/assets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    void filterByMultipleTagIds_matchesOnlyAssetsWithEveryOneOfThem() throws Exception {
+        String trapTagId = createTag("trap");
+        String darkTagId = createTag("dark");
+
+        String bothId = createAsset("Both", "BEAT", null, null);
+        mockMvc.perform(post("/api/v1/assets/" + bothId + "/tags/" + trapTagId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/assets/" + bothId + "/tags/" + darkTagId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        String trapOnlyId = createAsset("Trap only", "BEAT", null, null);
+        mockMvc.perform(post("/api/v1/assets/" + trapOnlyId + "/tags/" + trapTagId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        // AND semantics: requesting both tags must exclude the asset that only has one of them.
+        mockMvc.perform(get("/api/v1/assets?tagIds=" + trapTagId + "&tagIds=" + darkTagId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title").value("Both"));
+    }
+
+    @Test
+    void filterByDuplicateTagId_stillMatches_dedupedBeforeCounting() throws Exception {
+        // Regression test: tagCount must be the number of *distinct* requested tags, not the raw
+        // number of tagIds params sent -- otherwise a duplicated id makes the AND-match
+        // unsatisfiable and silently returns nothing. See AssetServiceImpl#getAssets.
+        String tagId = createTag("trap");
+        String taggedAssetId = createAsset("Tagged", "BEAT", null, null);
+        mockMvc.perform(post("/api/v1/assets/" + taggedAssetId + "/tags/" + tagId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/assets?tagIds=" + tagId + "&tagIds=" + tagId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title").value("Tagged"));
+    }
+
+    // --- format filter ---
+
+    @Test
+    void filterByAudioFormat_returnsOnlyMatchingFormat() throws Exception {
+        createAsset("A Wav", "BEAT", null, null, null, "wav");
+        createAsset("A Mp3", "BEAT", null, null, null, "mp3");
+
+        mockMvc.perform(get("/api/v1/assets?audioFormat=wav").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title").value("A Wav"));
+    }
+
+    // --- duration filter — the 30-second-bracket range the frontend sends as min/max seconds ---
+
+    @Test
+    void filterByDurationRange_returnsOnlyAssetsWithinIt() throws Exception {
+        createAsset("Short", "BEAT", null, null, 15, null); // 0:00-0:30 bracket
+        createAsset("Medium", "BEAT", null, null, 75, null); // 1:00-1:30 bracket
+        createAsset("Long", "BEAT", null, null, 200, null); // well past both brackets
+
+        // Requesting the 0:30-1:30 window (two 30s brackets) should include "Medium" (75s) but
+        // exclude "Short" (15s, below it) and "Long" (200s, above it).
+        mockMvc.perform(get("/api/v1/assets?minDurationSeconds=30&maxDurationSeconds=89")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title").value("Medium"));
+    }
+
+    // --- musicalKey filter is case-insensitive ---
+
+    @Test
+    void filterByMusicalKey_isCaseInsensitive() throws Exception {
+        createAsset("In Cm", "BEAT", null, "Cm");
+
+        mockMvc.perform(get("/api/v1/assets?musicalKey=cm").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title").value("In Cm"));
+    }
+
+    // --- sort ---
+
+    @Test
+    void sortByCreatedAtAscending_returnsOldestFirst() throws Exception {
+        createAsset("First", "BEAT", null, null);
+        createAsset("Second", "BEAT", null, null);
+
+        mockMvc.perform(get("/api/v1/assets?sortBy=createdAt&sortDir=asc").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("First"))
+                .andExpect(jsonPath("$[1].title").value("Second"));
+    }
+
+    @Test
+    void sortByUpdatedAtDescending_mostRecentlyModifiedFirst() throws Exception {
+        String firstId = createAsset("First", "BEAT", null, null);
+        createAsset("Second", "BEAT", null, null);
+
+        // Touch "First" after both were created, so it becomes the more recently *modified* one
+        // even though it was created first -- this is what distinguishes updatedAt from createdAt.
+        mockMvc.perform(put("/api/v1/assets/" + firstId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"First\",\"assetType\":\"BEAT\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/assets?sortBy=updatedAt&sortDir=desc").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("First"))
+                .andExpect(jsonPath("$[1].title").value("Second"));
     }
 
     // --- BPM range filter ---

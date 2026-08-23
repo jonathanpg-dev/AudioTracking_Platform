@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AudioTracking Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // Sets data-theme before first paint so the page never flashes the light-theme fallback
+      // (the @theme block's bare values) before switching to the user's actual theme -- matters
+      // more now that the default is "biophilic", not the fallback itself. Mirrors
+      // ThemeProvider's own read of the same localStorage key (src/features/theme/ThemeContext.tsx)
+      // and the id list in src/features/theme/themes.ts; keep both in sync with this list.
+      (function () {
+        try {
+          var stored = localStorage.getItem('atp-theme')
+          var valid = ['biophilic', 'light', 'dark', 'analog', 'gradient']
+          document.documentElement.dataset.theme = valid.indexOf(stored) !== -1 ? stored : 'biophilic'
+        } catch (e) {
+          document.documentElement.dataset.theme = 'biophilic'
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

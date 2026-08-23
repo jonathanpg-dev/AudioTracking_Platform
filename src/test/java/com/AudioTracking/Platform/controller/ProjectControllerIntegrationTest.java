@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -65,6 +66,69 @@ class ProjectControllerIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + tokenA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.id=='" + id + "')]").exists());
+    }
+
+    // --- sort ---
+
+    @Test
+    void getProjects_sortByCreatedAtAscending_returnsOldestFirst() throws Exception {
+        createProjectAndGetId(tokenA, "First");
+        createProjectAndGetId(tokenA, "Second");
+
+        mockMvc.perform(get("/api/v1/projects?sortBy=createdAt&sortDir=asc").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].name").value("First"))
+                .andExpect(jsonPath("$[1].name").value("Second"));
+    }
+
+    @Test
+    void getProjects_sortByUpdatedAtDescending_mostRecentlyModifiedFirst() throws Exception {
+        String firstId = createProjectAndGetId(tokenA, "First");
+        createProjectAndGetId(tokenA, "Second");
+
+        // Touch "First" after both were created, so it becomes the more recently *modified* one
+        // even though it was created first.
+        mockMvc.perform(put("/api/v1/projects/" + firstId)
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"First\",\"status\":\"PLANNING\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/projects?sortBy=updatedAt&sortDir=desc").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("First"))
+                .andExpect(jsonPath("$[1].name").value("Second"));
+    }
+
+    @Test
+    void getProjects_sortByUnrecognizedOrMaliciousField_fallsBackSafely_doesNotError() throws Exception {
+        // Same SortParams whitelist AssetController relies on (see AssetSearchSecurityIntegrationTest)
+        // -- an arbitrary property name or injection attempt must never reach Hibernate as a Sort field.
+        createProjectAndGetId(tokenA, "First");
+        createProjectAndGetId(tokenA, "Second");
+
+        mockMvc.perform(get("/api/v1/projects?sortBy=user.passwordHash").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+
+        mockMvc.perform(get("/api/v1/projects?sortBy=" + java.net.URLEncoder.encode("createdAt; DROP TABLE project; --", "UTF-8"))
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+    }
+
+    @Test
+    void getProjects_noSortParams_defaultsToCreatedAtDescending() throws Exception {
+        // Same default this endpoint had before sorting was configurable -- an old client that
+        // never sends sortBy/sortDir must see no behavior change.
+        createProjectAndGetId(tokenA, "First");
+        createProjectAndGetId(tokenA, "Second");
+
+        mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("Second"))
+                .andExpect(jsonPath("$[1].name").value("First"));
     }
 
     @Test

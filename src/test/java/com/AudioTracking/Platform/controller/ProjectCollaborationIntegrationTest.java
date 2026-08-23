@@ -44,6 +44,7 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
     private String viewToken;
     private String editToken;
     private String outsiderToken;
+    private String ownerEmail;
     private String viewEmail;
     private String editEmail;
     private String projectId;
@@ -51,7 +52,8 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         long suffix = System.nanoTime();
-        ownerToken = registerAndLogin("collabOwner" + suffix, "collabOwner" + suffix + "@example.com", "password123");
+        ownerEmail = "collabOwner" + suffix + "@example.com";
+        ownerToken = registerAndLogin("collabOwner" + suffix, ownerEmail, "password123");
         viewEmail = "collabView" + suffix + "@example.com";
         viewToken = registerAndLogin("collabView" + suffix, viewEmail, "password123");
         editEmail = "collabEdit" + suffix + "@example.com";
@@ -74,8 +76,12 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
     }
 
     private void share(String projectId, String email, String permission) throws Exception {
+        share(ownerToken, projectId, email, permission);
+    }
+
+    private void share(String sharerToken, String projectId, String email, String permission) throws Exception {
         mockMvc.perform(post("/api/v1/projects/" + projectId + "/shares")
-                        .header("Authorization", "Bearer " + ownerToken)
+                        .header("Authorization", "Bearer " + sharerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userEmail\":\"" + email + "\",\"permission\":\"" + permission + "\"}"))
                 .andExpect(status().isCreated());
@@ -102,6 +108,56 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
                         .multipart("/api/v1/assets/" + assetId + "/file").file(file)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
+    }
+
+    // ================= myRole (Phase 7: backend-computed permission signal for the frontend) =================
+
+    @Test
+    void myRole_ownerSeesOwner_viewCollaboratorSeesView_editCollaboratorSeesEdit() throws Exception {
+        mockMvc.perform(get("/api/v1/projects/" + projectId).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myRole").value("OWNER"));
+        mockMvc.perform(get("/api/v1/projects/" + projectId).header("Authorization", "Bearer " + viewToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myRole").value("VIEW"));
+        mockMvc.perform(get("/api/v1/projects/" + projectId).header("Authorization", "Bearer " + editToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myRole").value("EDIT"));
+    }
+
+    @Test
+    void myRole_updatesAfterPermissionChange() throws Exception {
+        // Owner promotes the VIEW collaborator to EDIT.
+        MvcResult shares = mockMvc.perform(get("/api/v1/projects/" + projectId + "/shares").header("Authorization", "Bearer " + ownerToken))
+                .andReturn();
+        String shareId = null;
+        for (var node : objectMapper.readTree(shares.getResponse().getContentAsString())) {
+            if (node.get("email").asText().equals(viewEmail)) {
+                shareId = node.get("id").asText();
+            }
+        }
+        mockMvc.perform(put("/api/v1/projects/" + projectId + "/shares/" + shareId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"permission":"EDIT"}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/projects/" + projectId).header("Authorization", "Bearer " + viewToken))
+                .andExpect(jsonPath("$.myRole").value("EDIT"));
+    }
+
+    @Test
+    void myRole_createAndUpdateResponses_alwaysReportOwner() throws Exception {
+        mockMvc.perform(post("/api/v1/projects")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Solo Project"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.myRole").value("OWNER"));
     }
 
     // ================= VIEW PERMISSION =================
@@ -194,6 +250,36 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    // Targets the "add existing asset to a project" flow (ProjectDetailPage's "Add existing
+    // asset" picker, PUT /assets/{id} with projectId set): a VIEW collaborator moving an asset
+    // THEY OWN into the shared project. findAccessibleOrThrow grants them full rights over their
+    // own asset (correctly), but resolveAssignableProjectOrNull must still separately require
+    // EDIT access on the *target* project -- moving into a project is itself a "modify this
+    // project's resources" action, regardless of who owns the asset being moved in.
+    @Test
+    void view_cannotMoveTheirOwnStandaloneAssetIntoTheSharedProject() throws Exception {
+        // Standalone (no projectId field at all -- the helper's "null" string interpolation
+        // would otherwise become the JSON string "null", not a real null), owned by the VIEW
+        // collaborator.
+        MvcResult created = mockMvc.perform(post("/api/v1/assets")
+                        .header("Authorization", "Bearer " + viewToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Own Beat\",\"assetType\":\"BEAT\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String ownAssetId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
+        mockMvc.perform(put("/api/v1/assets/" + ownAssetId)
+                        .header("Authorization", "Bearer " + viewToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Beat\",\"assetType\":\"BEAT\",\"projectId\":\"" + projectId + "\"}"))
+                .andExpect(status().isForbidden());
+
+        // Confirm it truly never moved.
+        mockMvc.perform(get("/api/v1/assets/" + ownAssetId).header("Authorization", "Bearer " + viewToken))
+                .andExpect(jsonPath("$.projectId").doesNotExist());
+    }
+
     @Test
     void view_cannotUpdateProjectMetadata_administrativeOperation() throws Exception {
         mockMvc.perform(put("/api/v1/projects/" + projectId)
@@ -203,6 +289,31 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
                                 {"name":"Renamed by collaborator","status":"PLANNING"}
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    // Tags are strictly owner-only (see AssetServiceImpl#addTag/removeTag's findOwnedOrThrow) --
+    // deliberately not extended to project collaborators at all, VIEW or EDIT. Regression coverage
+    // for a real bug: the frontend showed VIEW collaborators fully interactive tag controls with
+    // no gating (AssetDetailPage.tsx), and the mutation's silent 404 gave no error feedback --
+    // easy to mistake for "I was able to modify it". The backend itself was always correct; this
+    // just proves it explicitly and keeps it that way.
+    @Test
+    void view_cannotTagAsset() throws Exception {
+        String assetId = createAssetId(ownerToken, projectId);
+        String tagId = createTag(viewToken, "trap"); // owns the tag; still can't attach it to someone else's asset
+
+        mockMvc.perform(post("/api/v1/assets/" + assetId + "/tags/" + tagId).header("Authorization", "Bearer " + viewToken))
+                .andExpect(status().isNotFound());
+    }
+
+    private String createTag(String token, String name) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/tags")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + name + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
     }
 
     // ================= EDIT PERMISSION =================
@@ -248,6 +359,17 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
                         .content("{\"title\":\"Updated by collaborator\",\"assetType\":\"BEAT\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Updated by collaborator"));
+    }
+
+    // Owner-only, no exception even for EDIT -- see the VIEW-side view_cannotTagAsset above for
+    // the full reasoning.
+    @Test
+    void edit_cannotTagAsset() throws Exception {
+        String assetId = createAssetId(ownerToken, projectId);
+        String tagId = createTag(editToken, "trap");
+
+        mockMvc.perform(post("/api/v1/assets/" + assetId + "/tags/" + tagId).header("Authorization", "Bearer " + editToken))
+                .andExpect(status().isNotFound());
     }
 
     // 36. EDIT collaborator can delete resources/assets in Project.
@@ -329,12 +451,60 @@ class ProjectCollaborationIntegrationTest extends BaseIntegrationTest {
     void ownership_projectOwnerUnaffectedBySharing() throws Exception {
         mockMvc.perform(get("/api/v1/projects/" + projectId).header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk());
-        // Owner-only listing still shows it as theirs.
+        // The owner's own listing still shows it as theirs.
         mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + ownerToken))
-                .andExpect(jsonPath("$.length()").value(1));
-        // Collaborators never see it in THEIR "my projects" list -- they only reach it directly.
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].myRole").value("OWNER"));
+    }
+
+    // GET /projects now includes Projects shared with the caller, not just ones they own -- a
+    // VIEW or EDIT collaborator sees it in their own "Projects" list, with myRole reflecting the
+    // actual granted permission (never OWNER for either of them). See docs/collaboration.md.
+    @Test
+    void getProjects_includesProjectsSharedWithMe_withCorrectRole() throws Exception {
+        mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + viewToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(projectId))
+                .andExpect(jsonPath("$[0].myRole").value("VIEW"));
+
         mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + editToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(projectId))
+                .andExpect(jsonPath("$[0].myRole").value("EDIT"));
+    }
+
+    @Test
+    void getProjects_unrelatedUser_stillDoesNotSeeIt() throws Exception {
+        mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + outsiderToken))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void getProjects_revokedCollaborator_noLongerSeesIt() throws Exception {
+        revokeShare(projectId, viewEmail);
+
+        mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + viewToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    // An owner who also collaborates on someone else's Project sees both, each with its own
+    // correct myRole -- not a blanket OWNER just because they own *a* Project.
+    @Test
+    void getProjects_ownerSharedWithSomeoneElsesProject_seesBothWithDistinctRoles() throws Exception {
+        long suffix2 = System.nanoTime();
+        String secondOwnerToken = registerAndLogin("collabOwner2" + suffix2, "collabOwner2" + suffix2 + "@example.com", "password123");
+        String secondProjectId = createProject(secondOwnerToken, "Someone Else's EP");
+        share(secondOwnerToken, secondProjectId, ownerEmail, "EDIT");
+
+        mockMvc.perform(get("/api/v1/projects").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.id=='" + projectId + "')].myRole").value("OWNER"))
+                .andExpect(jsonPath("$[?(@.id=='" + secondProjectId + "')].myRole").value("EDIT"));
     }
 
     // 44/46. Asset ownership remains correct after sharing; a collaborator cannot transfer it.

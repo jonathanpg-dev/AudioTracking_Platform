@@ -5,10 +5,13 @@ import com.AudioTracking.Platform.dto.project.ProjectResponse;
 import com.AudioTracking.Platform.dto.project.UpdateProjectRequest;
 import com.AudioTracking.Platform.entity.Client;
 import com.AudioTracking.Platform.entity.Project;
+import com.AudioTracking.Platform.entity.ProjectRole;
 import com.AudioTracking.Platform.entity.ProjectStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Component
 public class ProjectMapper {
@@ -30,7 +33,7 @@ public class ProjectMapper {
         existing.setStatus(request.status());
     }
 
-    public ProjectResponse toResponse(Project project) {
+    public ProjectResponse toResponse(Project project, ProjectRole myRole) {
         Client client = project.getClient();
         return new ProjectResponse(
                 project.getId(),
@@ -40,10 +43,15 @@ public class ProjectMapper {
                 project.getCreatedAt(),
                 project.getUpdatedAt(),
                 client == null ? null : client.getId(),
-                client == null ? null : client.getName());
+                client == null ? null : client.getName(),
+                myRole);
     }
 
-    public List<ProjectResponse> toResponseList(List<Project> projects) {
-        return projects.stream().map(this::toResponse).toList();
+    // GET /projects now includes both owned and shared-with-me Projects (see
+    // docs/collaboration.md and ProjectServiceImpl#getProjects), so the caller's role can no
+    // longer be assumed to be OWNER for every row -- rolesByProjectId comes from
+    // ProjectAccessService#getRoles, computed once for the whole list.
+    public List<ProjectResponse> toResponseList(List<Project> projects, Map<UUID, ProjectRole> rolesByProjectId) {
+        return projects.stream().map(project -> toResponse(project, rolesByProjectId.get(project.getId()))).toList();
     }
 }

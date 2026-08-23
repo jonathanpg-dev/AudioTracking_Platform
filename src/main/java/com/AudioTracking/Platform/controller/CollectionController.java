@@ -4,7 +4,9 @@ import com.AudioTracking.Platform.dto.collection.CollectionResponse;
 import com.AudioTracking.Platform.dto.collection.CreateCollectionRequest;
 import com.AudioTracking.Platform.security.CustomUserDetails;
 import com.AudioTracking.Platform.service.CollectionService;
+import com.AudioTracking.Platform.util.SortParams;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,8 +33,11 @@ public class CollectionController {
     }
 
     @GetMapping
-    public ResponseEntity<List<CollectionResponse>> getCollections(@AuthenticationPrincipal CustomUserDetails currentUser) {
-        return ResponseEntity.ok(collectionService.getCollections(currentUser.getId()));
+    public ResponseEntity<List<CollectionResponse>> getCollections(@AuthenticationPrincipal CustomUserDetails currentUser,
+                                                                     @RequestParam(required = false) String sortBy,
+                                                                     @RequestParam(required = false) String sortDir) {
+        Sort sort = SortParams.resolve(sortBy, sortDir);
+        return ResponseEntity.ok(collectionService.getCollections(currentUser.getId(), sort));
     }
 
     @GetMapping("/{id}")

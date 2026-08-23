@@ -13,6 +13,7 @@ import com.AudioTracking.Platform.repository.UserRepository;
 import com.AudioTracking.Platform.security.CustomUserDetails;
 import com.AudioTracking.Platform.security.JwtService;
 import com.AudioTracking.Platform.service.AuthService;
+import com.AudioTracking.Platform.util.UsernameGenerator;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -33,16 +34,18 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final GoogleIdTokenVerifier googleIdTokenVerifier;
+    private final UsernameGenerator usernameGenerator;
 
     public AuthServiceImpl(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder,
                             AuthenticationManager authenticationManager, JwtService jwtService,
-                            GoogleIdTokenVerifier googleIdTokenVerifier) {
+                            GoogleIdTokenVerifier googleIdTokenVerifier, UsernameGenerator usernameGenerator) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.googleIdTokenVerifier = googleIdTokenVerifier;
+        this.usernameGenerator = usernameGenerator;
     }
 
     @Override
@@ -108,28 +111,10 @@ public class AuthServiceImpl implements AuthService {
                 })
                 .orElseGet(() -> {
                     User user = new User();
-                    user.setUsername(generateUniqueUsername(email));
+                    user.setUsername(usernameGenerator.generateUniqueUsername(email));
                     user.setEmail(email);
                     user.setGoogleId(googleId);
                     return userRepository.save(user);
                 });
-    }
-
-    private String generateUniqueUsername(String email) {
-        String base = email.substring(0, email.indexOf('@')).replaceAll("[^a-zA-Z0-9._-]", "");
-        if (base.length() < 3) {
-            base = base + "user"; // pad short local-parts (e.g. "ab") up to the 3-char minimum
-        }
-        if (base.length() > 26) {
-            base = base.substring(0, 26); // leaves room for a numeric suffix, staying within the 30-char limit
-        }
-
-        String candidate = base;
-        int suffix = 0;
-        while (userRepository.existsByUsername(candidate)) {
-            suffix++;
-            candidate = base + suffix;
-        }
-        return candidate;
     }
 }

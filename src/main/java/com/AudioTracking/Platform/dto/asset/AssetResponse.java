@@ -24,6 +24,10 @@ public record AssetResponse(
         String projectName,
         // Deliberately a boolean, not the raw storageKey — the internal object-key format is an
         // implementation detail, not something clients should see or depend on.
-        boolean hasAudioFile
+        boolean hasAudioFile,
+        // Feedback from the project's client — writable only via PUT .../client-notes by the
+        // Project's linked client, but visible to anyone with view+ access, same as every other
+        // field here. Null means no client feedback yet. See AssetService#updateClientNotes.
+        String clientNotes
 ) {
 }

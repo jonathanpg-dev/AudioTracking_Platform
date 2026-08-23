@@ -7,6 +7,7 @@ import com.AudioTracking.Platform.entity.AnalyticsEventType;
 import com.AudioTracking.Platform.entity.Asset;
 import com.AudioTracking.Platform.entity.Client;
 import com.AudioTracking.Platform.entity.Project;
+import com.AudioTracking.Platform.entity.ProjectRole;
 import com.AudioTracking.Platform.exception.ResourceNotFoundException;
 import com.AudioTracking.Platform.mapper.ProjectMapper;
 import com.AudioTracking.Platform.repository.AssetRepository;
@@ -16,10 +17,12 @@ import com.AudioTracking.Platform.repository.UserRepository;
 import com.AudioTracking.Platform.service.AnalyticsService;
 import com.AudioTracking.Platform.service.ProjectAccessService;
 import com.AudioTracking.Platform.service.ProjectService;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -53,20 +56,33 @@ public class ProjectServiceImpl implements ProjectService {
         project.setClient(resolveOwnedClientOrNull(ownerId, request.clientId()));
         Project saved = projectRepository.save(project);
         analyticsService.record(ownerId, AnalyticsEventType.PROJECT_CREATED, null, saved.getId());
-        return projectMapper.toResponse(saved);
+        return projectMapper.toResponse(saved, ProjectRole.OWNER);
     }
 
     @Override
-    public List<ProjectResponse> getProjects(UUID ownerId) {
-        // Deliberately owned-projects-only, not "owned + shared with me" — see
-        // docs/collaboration.md. Collaborators reach a shared project directly via getProject.
-        return projectMapper.toResponseList(projectRepository.findAllByUserIdOrderByCreatedAtDesc(ownerId));
+    public List<ProjectResponse> getProjects(UUID userId, Sort sort) {
+        // Owned Projects AND Projects shared with this user, merged -- see
+        // docs/collaboration.md. myRole is resolved per-Project (not assumed OWNER) since a
+        // collaborator's own shared Projects now appear here too.
+        List<Project> projects = projectRepository.findAllAccessibleByUserId(userId, sort);
+        Map<UUID, ProjectRole> roles = projectAccessService.getRoles(userId, projects);
+        return projectMapper.toResponseList(projects, roles);
+    }
+
+    @Override
+    public List<ProjectResponse> getProjectsAsClient(UUID userId, Sort sort) {
+        // Every row here has an assigned Client whose linkedUser is this caller -- myRole CLIENT
+        // for all of them, no per-project role lookup needed (contrast with getProjects above).
+        List<Project> projects = projectRepository.findAllByClientLinkedUserId(userId, sort);
+        return projects.stream().map(project -> projectMapper.toResponse(project, ProjectRole.CLIENT)).toList();
     }
 
     @Override
     public ProjectResponse getProject(UUID requesterId, UUID projectId) {
         // Owner, VIEW collaborator, or EDIT collaborator can all view the project.
-        return projectMapper.toResponse(projectAccessService.requireViewAccess(requesterId, projectId));
+        Project project = projectAccessService.requireViewAccess(requesterId, projectId);
+        ProjectRole role = projectAccessService.getRole(requesterId, project);
+        return projectMapper.toResponse(project, role);
     }
 
     @Override
@@ -79,7 +95,7 @@ public class ProjectServiceImpl implements ProjectService {
         existing.setClient(resolveOwnedClientOrNull(ownerId, request.clientId()));
         Project saved = projectRepository.save(existing);
         analyticsService.record(ownerId, AnalyticsEventType.PROJECT_UPDATED, null, saved.getId());
-        return projectMapper.toResponse(saved);
+        return projectMapper.toResponse(saved, ProjectRole.OWNER);
     }
 
     @Override

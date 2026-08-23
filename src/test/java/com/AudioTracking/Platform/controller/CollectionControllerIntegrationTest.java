@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -56,6 +57,55 @@ class CollectionControllerIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/v1/collections/" + id).header("Authorization", "Bearer " + tokenA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Favorites"));
+    }
+
+    // --- sort ---
+
+    @Test
+    void getCollections_sortByCreatedAtAscending_returnsOldestFirst() throws Exception {
+        createCollectionAndGetId(tokenA, "First");
+        createCollectionAndGetId(tokenA, "Second");
+
+        mockMvc.perform(get("/api/v1/collections?sortBy=createdAt&sortDir=asc").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].name").value("First"))
+                .andExpect(jsonPath("$[1].name").value("Second"));
+    }
+
+    @Test
+    void getCollections_sortByUpdatedAtDescending_mostRecentlyModifiedFirst() throws Exception {
+        String firstId = createCollectionAndGetId(tokenA, "First");
+        createCollectionAndGetId(tokenA, "Second");
+
+        // Renaming is the only mutation a Collection has (see Collection.java) -- touch "First"
+        // after both were created so it becomes the more recently *modified* one despite being
+        // created first.
+        mockMvc.perform(put("/api/v1/collections/" + firstId)
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"First (renamed)\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/collections?sortBy=updatedAt&sortDir=desc").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("First (renamed)"))
+                .andExpect(jsonPath("$[1].name").value("Second"));
+    }
+
+    @Test
+    void getCollections_sortByUnrecognizedOrMaliciousField_fallsBackSafely_doesNotError() throws Exception {
+        createCollectionAndGetId(tokenA, "First");
+        createCollectionAndGetId(tokenA, "Second");
+
+        mockMvc.perform(get("/api/v1/collections?sortBy=user.passwordHash").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+
+        mockMvc.perform(get("/api/v1/collections?sortBy=" + java.net.URLEncoder.encode("createdAt; DROP TABLE collection; --", "UTF-8"))
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
     }
 
     @Test

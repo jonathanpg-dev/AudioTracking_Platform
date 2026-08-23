@@ -36,7 +36,10 @@ Phase 6
 See [docs/analytics.md](docs/analytics.md) for the event-recording/aggregation split and why it's designed the way it is.
 
 Phase 7
-- Frontend / user interface
+- React + TypeScript frontend consuming the REST API
+
+See [docs/frontend.md](docs/frontend.md) for the stack, auth flow, permission-aware UI, and how to
+run it.
 
 Phase 8
 - Production deployment + CI/CD

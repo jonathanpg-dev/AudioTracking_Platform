@@ -16,4 +16,9 @@ public interface ClientRepository extends JpaRepository<Client, UUID> {
     Optional<Client> findByIdAndUserId(UUID id, UUID userId);
 
     long countByUserId(UUID userId);
+
+    // Backs CurrentUserResponse.isLinkedAsClient -- true whenever this User is the login account
+    // for at least one Client record, regardless of whether that Client currently has any
+    // Projects assigned. See UserServiceImpl#getCurrentUser.
+    boolean existsByLinkedUserId(UUID userId);
 }

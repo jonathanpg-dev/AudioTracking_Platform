@@ -11,6 +11,7 @@ public record CollectionResponse(
         UUID id,
         String name,
         Instant createdAt,
+        Instant updatedAt,
         List<UUID> assetIds
 ) {
 }

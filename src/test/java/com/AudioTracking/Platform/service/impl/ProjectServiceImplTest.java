@@ -6,6 +6,7 @@ import com.AudioTracking.Platform.dto.project.UpdateProjectRequest;
 import com.AudioTracking.Platform.entity.Asset;
 import com.AudioTracking.Platform.entity.Client;
 import com.AudioTracking.Platform.entity.Project;
+import com.AudioTracking.Platform.entity.ProjectRole;
 import com.AudioTracking.Platform.entity.ProjectStatus;
 import com.AudioTracking.Platform.entity.User;
 import com.AudioTracking.Platform.exception.InsufficientPermissionException;
@@ -74,7 +75,7 @@ class ProjectServiceImplTest {
         saved.setId(projectId);
         when(projectRepository.save(mapped)).thenReturn(saved);
         ProjectResponse expected = mock(ProjectResponse.class);
-        when(projectMapper.toResponse(saved)).thenReturn(expected);
+        when(projectMapper.toResponse(saved, ProjectRole.OWNER)).thenReturn(expected);
 
         ProjectResponse result = projectService.createProject(ownerId, request);
 
@@ -96,7 +97,7 @@ class ProjectServiceImplTest {
         client.setId(clientId);
         when(clientRepository.findByIdAndUserId(clientId, ownerId)).thenReturn(Optional.of(client));
         when(projectRepository.save(mapped)).thenReturn(mapped);
-        when(projectMapper.toResponse(mapped)).thenReturn(mock(ProjectResponse.class));
+        when(projectMapper.toResponse(mapped, ProjectRole.OWNER)).thenReturn(mock(ProjectResponse.class));
 
         projectService.createProject(ownerId, request);
 
@@ -122,10 +123,25 @@ class ProjectServiceImplTest {
         Project project = new Project();
         project.setId(projectId);
         when(projectAccessService.requireViewAccess(ownerId, projectId)).thenReturn(project);
+        when(projectAccessService.getRole(ownerId, project)).thenReturn(ProjectRole.OWNER);
         ProjectResponse expected = mock(ProjectResponse.class);
-        when(projectMapper.toResponse(project)).thenReturn(expected);
+        when(projectMapper.toResponse(project, ProjectRole.OWNER)).thenReturn(expected);
 
         ProjectResponse result = projectService.getProject(ownerId, projectId);
+
+        assertThat(result).isSameAs(expected);
+    }
+
+    @Test
+    void getProject_viewCollaborator_mapsWithViewRole() {
+        Project project = new Project();
+        project.setId(projectId);
+        when(projectAccessService.requireViewAccess(otherUserId, projectId)).thenReturn(project);
+        when(projectAccessService.getRole(otherUserId, project)).thenReturn(ProjectRole.VIEW);
+        ProjectResponse expected = mock(ProjectResponse.class);
+        when(projectMapper.toResponse(project, ProjectRole.VIEW)).thenReturn(expected);
+
+        ProjectResponse result = projectService.getProject(otherUserId, projectId);
 
         assertThat(result).isSameAs(expected);
     }
@@ -147,7 +163,7 @@ class ProjectServiceImplTest {
         when(projectAccessService.requireOwnerAccess(ownerId, projectId)).thenReturn(existing);
         when(projectRepository.save(existing)).thenReturn(existing);
         ProjectResponse expected = mock(ProjectResponse.class);
-        when(projectMapper.toResponse(existing)).thenReturn(expected);
+        when(projectMapper.toResponse(existing, ProjectRole.OWNER)).thenReturn(expected);
 
         ProjectResponse result = projectService.updateProject(ownerId, projectId, request);
 

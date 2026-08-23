@@ -1,12 +1,15 @@
 package com.AudioTracking.Platform.controller;
 
+import com.AudioTracking.Platform.dto.CurrentUserResponse;
 import com.AudioTracking.Platform.dto.UpdateUserRequest;
 import com.AudioTracking.Platform.dto.UserResponse;
+import com.AudioTracking.Platform.security.CustomUserDetails;
 import com.AudioTracking.Platform.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,6 +23,22 @@ public class UserController {
 
     public UserController(UserService userService) {
         this.userService = userService;
+    }
+
+    // Mapped before "/{id}" registration order doesn't actually matter here since "me" would
+    // fail UUID conversion and 400 if it were ever matched by @PathVariable UUID id anyway, but
+    // being explicit keeps intent obvious. The only way to reach this is the JWT of the caller
+    // themselves -- there is no way to pass another user's id here.
+    @GetMapping("/me")
+    public ResponseEntity<CurrentUserResponse> getCurrentUser(@AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(userService.getCurrentUser(currentUser.getId()));
+    }
+
+    // "Become a creator too" -- see UserService#unlockCreatorMode. Same "only reachable via the
+    // caller's own JWT" note as /me above applies here too.
+    @PostMapping("/me/creator-mode")
+    public ResponseEntity<CurrentUserResponse> unlockCreatorMode(@AuthenticationPrincipal CustomUserDetails currentUser) {
+        return ResponseEntity.ok(userService.unlockCreatorMode(currentUser.getId()));
     }
 
     @GetMapping
