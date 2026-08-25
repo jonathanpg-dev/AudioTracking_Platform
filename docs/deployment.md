@@ -264,6 +264,8 @@ the real image on every PR, which is the actual verification of the Dockerfile.
 | CORS errors in the browser console | `CORS_ALLOWED_ORIGINS` on Render doesn't exactly match the Cloudflare Pages URL (scheme + host, no trailing slash). |
 | Frontend loads but every API call fails | `VITE_API_BASE_URL` wasn't set at *build* time — it's baked into the bundle, so redeploying with a corrected repo variable requires a fresh `deploy.yml` run, not just a Render restart. |
 | Google sign-in fails only in production | The Cloudflare Pages URL wasn't added to Authorized JavaScript origins in Google Cloud Console. |
+| `wrangler pages deploy` reports success in CI, but `<project>.pages.dev` 404s on every path (even `/`) | It deployed as a **preview** build, not production. `wrangler` infers the production branch from git state, and `actions/checkout` leaves the repo on a detached HEAD at a commit SHA (not an actual branch checkout) -- with nothing to detect, it silently falls back to a preview alias instead of the real URL. Fixed by passing `--branch=master` explicitly in `deploy.yml` (must match the production branch name set when the Pages project was created). |
+| `wrangler` reports "Authentication error [code: 10000]" + "Unable to retrieve email for this user" | The API token is missing the `User > User Details > Read` permission alongside `Account > Cloudflare Pages > Edit` -- Cloudflare's "Edit Cloudflare Workers" template bundles both; a hand-assembled custom token easily misses the User-level one since it's a separate permission category from Account-level ones. |
 
 ## Cost control
 

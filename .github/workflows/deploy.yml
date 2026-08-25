@@ -66,4 +66,11 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend
-          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+          # --branch is required, not optional, in CI: wrangler otherwise infers "is this the
+          # production branch?" from git state, and actions/checkout leaves the repo on a
+          # detached HEAD at a specific commit SHA rather than an actual branch checkout -- with
+          # no branch to detect, it publishes as a preview deployment under a generated alias
+          # instead of updating the real <project>.pages.dev production URL. master here must
+          # match whatever this Pages project's production branch was set to when it was created
+          # (see docs/deployment.md).
+          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }} --branch=master
