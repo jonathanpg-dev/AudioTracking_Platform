@@ -1,0 +1,69 @@
+name: Deploy
+
+# Fires after the CI workflow finishes on master -- never on a PR, and never if CI failed (the
+# `if` below checks both). This is what actually implements "test -> build -> deploy": nothing in
+# this file re-decides whether the code is good, it only trusts ci.yml's own verdict for the exact
+# commit CI just ran against.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-backend:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        # Render builds and deploys the Docker image itself server-side from this same repo/
+        # Dockerfile once hit -- see docs/deployment.md for how to get this URL from the Render
+        # dashboard. Render's own "auto-deploy on push" is deliberately left OFF; this hook is the
+        # only thing allowed to trigger a deploy, so a push to master with failing tests (CI red)
+        # never reaches production.
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+  deploy-frontend:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # workflow_run doesn't check out the triggering commit by default -- pin explicitly to
+          # it, so this deploys exactly what CI just verified, not whatever master has moved to
+          # since.
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Build with production config
+        # Vite bakes VITE_* values into the bundle at build time, not read at runtime -- CI's own
+        # build (frontend/.env.test) is useless for this, this has to be its own build against the
+        # real deployed backend URL. VITE_GOOGLE_CLIENT_ID isn't a secret (see
+        # application.properties' own google.oauth.client-id default) so it's fine hardcoded here
+        # rather than needing yet another repo variable for a value that never changes per
+        # environment.
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_GOOGLE_CLIENT_ID: 39740111233-gpf5q3p7tj49urceq9tkcjpp0h56c182.apps.googleusercontent.com
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}

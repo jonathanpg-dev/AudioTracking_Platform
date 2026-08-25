@@ -1,0 +1,11 @@
+# Copy to application-local.properties (gitignored -- see .gitignore) and fill in your own local
+# Postgres credentials + a JWT signing secret. Loaded automatically via
+# spring.config.import=optional:application-local.properties in application.properties; nothing
+# here is read unless the file exists.
+#
+# Generate a JWT secret with: openssl rand -hex 32
+
+DATABASE_URL=jdbc:postgresql://localhost:5432/AudioTracking Platform
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=
+JWT_SECRET=

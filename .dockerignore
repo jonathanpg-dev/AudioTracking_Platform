@@ -1,0 +1,10 @@
+target/
+frontend/
+.git/
+.idea/
+.vscode/
+*.iml
+docs/
+*.md
+src/main/resources/application-local.properties
+src/main/resources/application-local.properties.example

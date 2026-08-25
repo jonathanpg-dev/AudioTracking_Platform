@@ -42,5 +42,10 @@ See [docs/frontend.md](docs/frontend.md) for the stack, auth flow, permission-aw
 run it.
 
 Phase 8
-- Production deployment + CI/CD
-    
+- Production deployment: Render (backend, Docker), Neon (Postgres), Cloudflare Pages (frontend)
+- Flyway-managed database migrations, replacing dev-only schema auto-update
+- GitHub Actions CI (tests + build on every PR/push) and CD (deploys only after CI passes)
+
+See [docs/deployment.md](docs/deployment.md) for the full architecture, required environment
+variables, deployment steps for each service, the CI/CD pipeline, migration workflow, cost
+breakdown, and the security review.

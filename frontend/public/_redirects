@@ -1,0 +1,6 @@
+# Cloudflare Pages' SPA-fallback convention: any path that isn't a real static asset (JS/CSS/
+# images, all served normally since Pages checks for a matching file first) falls back to
+# index.html with a 200, not a 404 -- so a direct navigation or refresh on a client-side route
+# like /dashboard or /assets/:id resolves through React Router instead of hitting Cloudflare's own
+# "not found" page. See docs/deployment.md.
+/* /index.html 200

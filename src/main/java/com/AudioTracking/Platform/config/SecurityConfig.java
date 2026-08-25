@@ -49,6 +49,13 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        // The deployment platform polls this, unauthenticated, to decide whether
+                        // to route traffic here -- it can only ever report the aggregate UP/DOWN
+                        // status (see management.endpoints.web.exposure.include in
+                        // application.properties), never a secret. Every other /actuator/**
+                        // path -- none of which are actually exposed anyway -- still falls
+                        // through to .anyRequest().authenticated() below as defense in depth.
+                        .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(restAuthenticationEntryPoint))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

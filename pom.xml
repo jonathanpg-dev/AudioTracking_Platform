@@ -38,6 +38,25 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- Phase 8: replaces ddl-auto=update. Hibernate now only ever validates the schema
+		     (spring.jpa.hibernate.ddl-auto=validate) against what Flyway actually created; see
+		     src/main/resources/db/migration and docs/deployment.md. spring-boot-starter-flyway
+		     (not just flyway-core) is required in Spring Boot 4, which split Flyway's
+		     auto-configuration out of the monolithic spring-boot-autoconfigure jar. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+		<!-- Phase 8: a minimal, unauthenticated /actuator/health for the deployment platform to
+		     poll; see SecurityConfig and application.properties for what's actually exposed. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
