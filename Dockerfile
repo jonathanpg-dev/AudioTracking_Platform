@@ -13,6 +13,12 @@ WORKDIR /app
 # dependency-download layer on the next build.
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
+# This repo has only ever been worked on from Windows, where git's core.fileMode is false by
+# default -- it never tracks a local chmod, so mvnw can end up committed as non-executable
+# (100644) with no build failure until it's actually run somewhere that enforces the bit, like
+# this Linux image. Fixed at the git level too (see git ls-files -s mvnw), but this chmod is kept
+# as well so the build can't silently regress if that ever reverts.
+RUN chmod +x mvnw
 RUN ./mvnw dependency:go-offline -B
 
 COPY src ./src
